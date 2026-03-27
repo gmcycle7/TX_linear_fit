@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+
+# Generated plots (can be regenerated)
+*.png
+!tutorial_img/*.png

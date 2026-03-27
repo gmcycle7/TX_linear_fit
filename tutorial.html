@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAM4 SerDes TX Linear Fit — Tutorial</title>
+<style>
+  :root{--bg:#f8f9fa;--card:#fff;--ac:#2563eb;--ac2:#059669;--warn:#d97706;
+        --cbg:#1e293b;--cfg:#e2e8f0;--bdr:#e2e8f0;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI','Microsoft JhengHei',sans-serif;background:var(--bg);color:#1e293b;line-height:1.75;}
+  .container{max-width:1060px;margin:0 auto;padding:20px;}
+  nav{background:var(--cbg);color:#fff;padding:10px 0;position:sticky;top:0;z-index:99;}
+  nav .container{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+  nav a{color:#93c5fd;text-decoration:none;font-size:.85em;}nav a:hover{color:#fff;}
+  nav .title{font-size:1.15em;font-weight:700;color:#fff;margin-right:auto;}
+  section{background:var(--card);border:1px solid var(--bdr);border-radius:12px;padding:30px 32px;margin:22px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  h1{font-size:1.9em;margin-bottom:6px;color:var(--ac);}
+  h2{font-size:1.45em;margin:22px 0 10px;color:var(--ac);border-bottom:2px solid var(--ac);padding-bottom:4px;}
+  h3{font-size:1.1em;margin:16px 0 6px;color:#334155;}
+  p,li{margin-bottom:7px;}ul,ol{padding-left:22px;}
+  pre{background:var(--cbg);color:var(--cfg);padding:14px 18px;border-radius:8px;overflow-x:auto;font-size:.86em;line-height:1.5;margin:10px 0;font-family:Consolas,'Courier New',monospace;}
+  code{font-family:Consolas,'Courier New',monospace;background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.9em;}
+  pre code{background:none;padding:0;}
+  table{border-collapse:collapse;width:100%;margin:10px 0;}
+  th,td{border:1px solid var(--bdr);padding:7px 10px;text-align:center;}
+  th{background:#f1f5f9;font-weight:600;}tr:nth-child(even){background:#f8fafc;}
+  .note{background:#eff6ff;border-left:4px solid var(--ac);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .warn{background:#fffbeb;border-left:4px solid var(--warn);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .key{background:#f0fdf4;border-left:4px solid var(--ac2);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .eq{background:#f8fafc;border:1px solid var(--bdr);padding:14px 20px;border-radius:8px;margin:12px 0;text-align:center;font-size:1.08em;font-family:'Cambria Math','Times New Roman',serif;}
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0;justify-content:center;}
+  .flow .box{background:var(--ac);color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:.88em;text-align:center;min-width:90px;}
+  .flow .box.green{background:var(--ac2);}.flow .box.orange{background:var(--warn);}.flow .box.red{background:#dc2626;}
+  .flow .arrow{font-size:1.3em;color:#94a3b8;}
+  .tag{display:inline-block;padding:1px 9px;border-radius:12px;font-size:.78em;font-weight:600;}
+  .tag.blue{background:#dbeafe;color:#1e40af;}.tag.green{background:#dcfce7;color:#166534;}.tag.red{background:#fee2e2;color:#991b1b;}
+  .matrix{display:inline-block;border-left:2px solid #334155;border-right:2px solid #334155;padding:3px 8px;margin:4px;vertical-align:middle;}
+  .matrix td{border:none;padding:2px 7px;font-family:Consolas,monospace;font-size:.82em;}
+
+  /* ---- figure + annotation layout ---- */
+  .fig-section{margin:18px 0;}
+  .fig-section img{width:100%;border:1px solid #ddd;border-radius:8px;margin:8px 0;cursor:zoom-in;}
+  .fig-section img:hover{box-shadow:0 2px 12px rgba(0,0,0,.15);}
+  .fig-row{display:flex;gap:18px;align-items:flex-start;margin:14px 0;}
+  .fig-row .fig-img{flex:1.1;min-width:0;}
+  .fig-row .fig-img img{width:100%;border:1px solid #ddd;border-radius:8px;}
+  .fig-row .fig-note{flex:1;min-width:260px;}
+  .callout{display:inline-block;background:#fef3c7;border:1px solid #f59e0b;padding:1px 7px;border-radius:6px;font-size:.85em;font-weight:600;margin:2px 0;}
+
+  footer{text-align:center;padding:28px;color:#94a3b8;font-size:.83em;}
+  @media(max-width:750px){.fig-row{flex-direction:column;}.container{padding:10px;}section{padding:16px;}}
+</style>
+</head>
+<body>
+
+<nav><div class="container">
+  <span class="title">PAM4 SerDes Linear Fit Tutorial</span>
+  <a href="#overview">Overview</a>
+  <a href="#workflow">Flow</a>
+  <a href="#tab-waveform">Waveform</a>
+  <a href="#tab-eye">Eye</a>
+  <a href="#tab-pulse">Pulse</a>
+  <a href="#tab-ac">AC</a>
+  <a href="#tab-linfit">Linear Fit</a>
+  <a href="#tab-hist">Histogram</a>
+  <a href="#math">Math</a>
+</div></nav>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<section id="overview">
+  <h1>PAM4 Channel Pulse Response Extraction</h1>
+  <div class="key">
+    <strong>已知：</strong>ideal PRBS pattern <code>a[n]</code>（無 ISI）＋ 量測波形 <code>y[n]</code>（有 ISI）<br>
+    <strong>求解：</strong>channel pulse response <code>h[k]</code><br>
+    <strong>驗證：</strong><code>conv(a, h) ≈ y</code>，FFT(h) ≈ channel 頻率響應
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="workflow">
+  <h2>完整流程</h2>
+  <div class="flow">
+    <div class="box">Ideal PRBS<br><small>a[n], 無 ISI</small></div><span class="arrow">→</span>
+    <div class="box orange">Loss Channel<br><small>H(f)</small></div><span class="arrow">→</span>
+    <div class="box red">Measured<br><small>y[n], 有 ISI</small></div><span class="arrow">→</span>
+    <div class="box green">Linear Fit<br><small>y = A·h</small></div><span class="arrow">→</span>
+    <div class="box">Pulse h[k]</div>
+  </div>
+  <p style="text-align:center;margin:10px 0;">
+    驗證：<code>conv(a, h)</code> = <strong>fitted waveform</strong> ≈ measured waveform<br>
+    頻域：<code>FFT(h)</code> = 系統 AC response
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 1: WAVEFORM -->
+<!-- ============================================================ -->
+<section id="tab-waveform">
+  <h2>Tab 1: Waveform — 三種波形比較</h2>
+  <div class="fig-section"><img src="tutorial_img/waveform.png" alt="Waveform"></div>
+
+  <h3>上圖：三條線分別是什麼</h3>
+  <table>
+    <tr><th>顏色</th><th>名稱</th><th>來源</th><th>意義</th></tr>
+    <tr><td><span class="tag blue">藍</span></td>
+        <td>Ideal PRBS (symbols)</td>
+        <td>已知的輸入 pattern <code>a[n]</code></td>
+        <td>完美方波，只有 {-3, -1, +1, +3} 四個值，<strong>沒有 ISI</strong></td></tr>
+    <tr><td><span class="tag red">紅</span></td>
+        <td>Measured (after channel)</td>
+        <td>ideal PRBS 通過 lossy channel 後的波形</td>
+        <td>有 ISI：level 之間的轉換變慢、振幅被壓縮、相鄰 symbol 互相干擾</td></tr>
+    <tr><td><span class="tag green">綠虛線</span></td>
+        <td>Fitted = conv(symbols, h)</td>
+        <td>ideal symbols 跟提取的 pulse response 做 convolution</td>
+        <td>如果 linear fit 正確，<strong>這條線應該跟紅線幾乎完全重疊</strong></td></tr>
+  </table>
+
+  <h3>下圖：Error = Measured − Fitted</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p><strong>看什麼：</strong></p>
+    <ul>
+      <li><strong>幅度越小越好</strong>：RMS 值顯示在標題</li>
+      <li><strong>應該看起來像白噪音</strong>（隨機、無規律）</li>
+      <li>如果有低頻波動 → DC offset 沒 fit 好</li>
+      <li>如果有週期性 → tap 數量不夠</li>
+    </ul>
+    <div class="key">
+      <strong>判讀標準：</strong><br>
+      SNDR(meas vs fitted) 應該 ≈ 你設定的 noise SNR。<br>
+      例：noise SNR = 40 dB → 預期 SNDR ≈ 37~40 dB
+    </div>
+  </div></div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 2: EYE DIAGRAM -->
+<!-- ============================================================ -->
+<section id="tab-eye">
+  <h2>Tab 2: Eye Diagram — PAM4 眼圖</h2>
+  <div class="fig-section"><img src="tutorial_img/eye_diagram.png" alt="Eye Diagram"></div>
+
+  <h3>看什麼</h3>
+  <div class="fig-row"><div class="fig-note">
+    <table>
+      <tr><th>特徵</th><th>好的眼圖</th><th>差的眼圖</th></tr>
+      <tr><td>眼睛開口（垂直）</td><td>大、清晰的三個菱形開口</td><td>開口小或完全閉合</td></tr>
+      <tr><td>眼睛寬度（水平）</td><td>開口寬，佔大部分 UI</td><td>開口窄，只在中心一小段</td></tr>
+      <tr><td>Level 分離度</td><td>四個水平 level 清楚分開</td><td>level 模糊、重疊</td></tr>
+      <tr><td>Crossing 處的散佈</td><td>集中在同一個時間點</td><td>jitter 大 → 散佈寬</td></tr>
+      <tr><td>噪音</td><td>每個 level 附近的線條集中</td><td>線條粗、散開</td></tr>
+    </table>
+  </div></div>
+
+  <h3>繪製方式</h3>
+  <ol>
+    <li>用 CDR 找到最佳 sampling phase</li>
+    <li>把 oversampled 波形摺疊成 2 UI 為一段</li>
+    <li>Cubic 插值到 128 pts/UI（讓曲線平滑）</li>
+    <li>疊在一起畫成 2D density heatmap（白底）</li>
+    <li>顏色越深 = 那個位置通過的 trace 越多</li>
+  </ol>
+
+  <div class="note">
+    <strong>PAM4 有 3 個 eye：</strong> 在 level -3/-1、-1/+1、+1/+3 之間各有一個菱形開口。<br>
+    Channel loss 越大 → 眼睛越閉合。ISI 讓不同 symbol transition 的軌跡分散開來。
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 3: PULSE RESPONSE -->
+<!-- ============================================================ -->
+<section id="tab-pulse">
+  <h2>Tab 3: Pulse Response — 提取的脈衝響應</h2>
+  <div class="fig-section"><img src="tutorial_img/pulse_response.png" alt="Pulse Response"></div>
+
+  <h3>上圖：Extracted vs True</h3>
+  <div class="fig-row"><div class="fig-note">
+    <table>
+      <tr><th>顏色</th><th>名稱</th><th>來源</th></tr>
+      <tr><td><span class="tag blue">藍 ●</span></td><td>Extracted</td><td>Linear fit 解出來的 h[k]</td></tr>
+      <tr><td><span class="tag green">綠 ■</span></td><td>True (impulse test)</td><td>Ground truth：送 impulse 通過同樣 channel 得到的真實 pulse</td></tr>
+    </table>
+    <p><strong>看什麼：</strong>兩組點應該<strong>完全重疊</strong>。如果重疊 = linear fit 正確。</p>
+  </div></div>
+
+  <h3>每個 tap 的物理意義</h3>
+  <div class="eq">
+    y[n] = h[0]·a[n] + h[1]·a[n-1] + h[2]·a[n-2] + ⋯
+  </div>
+  <table>
+    <tr><th>Tap</th><th>名稱</th><th>意義</th><th>理想值</th></tr>
+    <tr><td>h[cursor]</td><td><strong>Main cursor</strong></td><td>當前 symbol 對 output 的貢獻（最大的 tap）</td><td>趨近 1.0（無 loss）</td></tr>
+    <tr><td>h[cursor−1], h[cursor−2]</td><td>Pre-cursor</td><td>未來 symbol 對當前 output 的干擾</td><td>趨近 0（無 ISI）</td></tr>
+    <tr><td>h[cursor+1], h[cursor+2], ...</td><td>Post-cursor</td><td>過去 symbol 對當前 output 的干擾</td><td>趨近 0（無 ISI）</td></tr>
+  </table>
+  <div class="warn">
+    <strong>Pre/post cursor 越大 = ISI 越嚴重。</strong><br>
+    Channel loss 越大 → cursor 變小、pre/post cursor 變大 → 眼圖越閉合。
+  </div>
+
+  <h3>下圖：Extraction Error</h3>
+  <p>每個 tap 的 extracted − true 差值。RMS 值越小代表提取越準確。</p>
+  <p>典型值：RMS &lt; 0.001 表示提取非常準確。</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 4: AC RESPONSE -->
+<!-- ============================================================ -->
+<section id="tab-ac">
+  <h2>Tab 4: AC Response — 頻率響應</h2>
+  <div class="fig-section"><img src="tutorial_img/ac_response.png" alt="AC Response"></div>
+
+  <h3>三條線分別代表什麼</h3>
+  <table>
+    <tr><th>顏色</th><th>名稱</th><th>計算方式</th><th>包含什麼</th></tr>
+    <tr><td><span class="tag blue">藍 實線</span></td>
+        <td>Extracted |G(f)|</td>
+        <td><code>FFT(h_extracted)</code></td>
+        <td>Channel + ZOH sinc + Aliasing<br>= 1 sps 系統的實際頻率響應</td></tr>
+    <tr><td><span class="tag green">綠 虛線</span></td>
+        <td>True pulse</td>
+        <td><code>FFT(impulse test result)</code></td>
+        <td>同上（ground truth）</td></tr>
+    <tr><td><span class="tag red">紅 點線</span></td>
+        <td>Pure channel H(f)</td>
+        <td>直接從你的 IL 設定計算</td>
+        <td>只有 Channel<br>（不含 sinc 和 aliasing）</td></tr>
+  </table>
+
+  <h3>如何判讀</h3>
+  <div class="key">
+    <ul>
+      <li><strong>藍線和綠線重疊</strong> → linear fit 正確！</li>
+      <li><strong>紅線跟藍/綠不同</strong> → 正常！紅線是純 channel，藍/綠包含 ZOH sinc 和 aliasing</li>
+    </ul>
+  </div>
+
+  <h3>為什麼 Extracted ≠ Pure Channel？</h3>
+  <p>信號從 ideal PRBS 到 1 sps 量測波形，經過三個處理：</p>
+  <div class="flow">
+    <div class="box">ZOH<br><small>sinc(f) 衰減</small></div><span class="arrow">×</span>
+    <div class="box orange">Channel<br><small>H(f) loss</small></div><span class="arrow">→ 降採樣 →</span>
+    <div class="box red">Aliasing<br><small>高頻摺疊</small></div>
+  </div>
+
+  <table>
+    <tr><th>效果</th><th>@ Nyquist</th><th>說明</th></tr>
+    <tr><td>(A) 純 Channel</td><td>-10.0 dB</td><td>你設定的</td></tr>
+    <tr><td>(B) ZOH sinc</td><td>-3.9 dB</td><td>sinc(0.5) = 2/&pi; &asymp; 0.637</td></tr>
+    <tr><td>(C) = A + B</td><td>-13.9 dB</td><td>無 aliasing 的預期值</td></tr>
+    <tr><td>(D) 含 Aliasing</td><td>~-8 dB</td><td>旁瓣能量摺疊回來 → loss 變少</td></tr>
+  </table>
+
+  <div class="eq">
+    G(f) = &Sigma;<sub>k=&minus;&infin;</sub><sup>&infin;</sup> sinc(f + k&middot;f<sub>baud</sub>) &times; H<sub>ch</sub>(f + k&middot;f<sub>baud</sub>)
+  </div>
+  <p>k=0 是主要項，k&ne;0 是 aliasing。sinc 的旁瓣 (sidelobes) 在 1.5&times;, 2.5&times; f<sub>baud</sub> 處非零，
+     乘上 channel 後摺疊回基帶。</p>
+
+  <pre><code>頻率 (&times; f_baud)    |sinc|      說明
+0.0                1.000       DC
+0.5 (Nyquist)      0.637       主瓣邊緣
+1.0                0.000       零點
+1.5                0.212       第1旁瓣 → 摺疊回來！
+2.0                0.000       零點
+2.5                0.127       第2旁瓣 → 也摺疊回來！</code></pre>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 5: LINEAR FIT -->
+<!-- ============================================================ -->
+<section id="tab-linfit">
+  <h2>Tab 5: Linear Fit — 六張子圖完整解讀</h2>
+  <div class="fig-section"><img src="tutorial_img/linear_fit.png" alt="Linear Fit"></div>
+
+  <!-- PANEL 1 -->
+  <h3>子圖 (1)：Matrix A 熱力圖</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p><strong>是什麼：</strong>矩陣 A 的前 50 行，用顏色表示每個元素的值。</p>
+    <ul>
+      <li><span style="color:#b91c1c;font-weight:700;">紅 = +3</span>、
+          <span style="color:#f97316;font-weight:700;">淡紅 = +1</span>、
+          <span style="color:#3b82f6;font-weight:700;">淡藍 = −1</span>、
+          <span style="color:#1e3a8a;font-weight:700;">深藍 = −3</span></li>
+      <li>X 軸 = column k = tap index</li>
+      <li>Y 軸 = row = output sample index</li>
+    </ul>
+    <p><strong>為什麼是斜條紋：</strong>每一行是上一行往右 shift 一格 → Toeplitz 結構。</p>
+    <div class="eq">
+      A[i, k] = a[n<sub>i</sub> &minus; k]
+    </div>
+    <pre><code>Row i  : [a[n], a[n-1], ..., a[n-L+1]]
+Row i+1: [a[n+1], a[n], ..., a[n-L+2]]
+          ↑ 整列右移一格</code></pre>
+
+    <p><strong>看什麼：</strong></p>
+    <ul>
+      <li>斜條紋清晰 → 結構正確</li>
+      <li>顏色隨機分布 → PRBS pattern 有良好隨機性</li>
+      <li>如果出現大面積同色塊 → pattern 有長串重複 → cond# 會變差</li>
+    </ul>
+  </div></div>
+
+  <!-- PANEL 2 -->
+  <h3>子圖 (2)：一行範例</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p><strong>是什麼：</strong>從矩陣 A 中取出一行（例如 n=2057），畫成 bar chart。</p>
+    <p>每個 bar 的高度是 <code>a[n-k]</code> 的值。</p>
+    <p><strong>數學意義：</strong>這一行代表一條方程式：</p>
+    <div class="eq" style="font-size:.95em;">
+      y[2057] = h[0]&times;<span style="color:#b91c1c;">a[2057]</span>
+             + h[1]&times;<span style="color:#b91c1c;">a[2056]</span>
+             + &hellip;
+             + h[30]&times;<span style="color:#b91c1c;">a[2027]</span>
+    </div>
+    <p>Bar chart 顯示的是<span style="color:#b91c1c;">紅色部分</span>（已知的 symbol 值）。
+       <span style="color:#1d4ed8;">h[k]</span> 是我們要求的未知數。</p>
+    <p><strong>看什麼：</strong>值域應該只有 {-3, -1, +1, +3}，分布接近隨機。</p>
+  </div></div>
+
+  <!-- PANEL 3 -->
+  <h3>子圖 (3)：y vs A·h — 量測值 vs 擬合值</h3>
+  <div class="fig-row"><div class="fig-note">
+    <table>
+      <tr><th>線</th><th>代表</th></tr>
+      <tr><td><span class="tag blue">藍</span> y</td><td>量測波形（真實值）</td></tr>
+      <tr><td><span class="tag red">紅虛線</span> A·h+dc</td><td>模型預測值 = 矩陣 A 乘以解出的 h，再加 DC offset</td></tr>
+    </table>
+    <p><strong>看什麼：兩條線越重疊越好。</strong></p>
+    <ul>
+      <li>完全重疊 → 模型完美解釋數據</li>
+      <li>系統性偏移 → 需要 fit DC offset</li>
+      <li>某些區域偏差大 → tap 不夠或非線性</li>
+    </ul>
+    <p><strong>對應的數學量：</strong></p>
+    <div class="eq">
+      R&sup2; = 1 &minus; &Sigma;(y &minus; &ycirc;)&sup2; / &Sigma;(y &minus; ȳ)&sup2;
+    </div>
+    <table>
+      <tr><th>R&sup2;</th><th>意義</th></tr>
+      <tr><td>0.9999</td><td>非常好：99.99% 的 variance 被解釋</td></tr>
+      <tr><td>0.999</td><td>好：可能 tap 不夠或 noise 較大</td></tr>
+      <tr><td>&lt; 0.99</td><td>需要檢查 alignment、tap 數量、或非線性問題</td></tr>
+    </table>
+  </div></div>
+
+  <!-- PANEL 4 -->
+  <h3>子圖 (4)：Residual = y − A·h</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p><strong>是什麼：</strong>上面圖 (3) 兩條線之間的差值。</p>
+    <div class="eq">e[n] = y[n] &minus; ŷ[n] = y[n] &minus; (A·ĥ + dc)</div>
+    <ul>
+      <li>綠色曲線 = 每個 sample 的 error</li>
+      <li>橘色虛線 = &plusmn;RMS 邊界</li>
+    </ul>
+    <p><strong>看什麼：</strong></p>
+    <ul>
+      <li><callout>應該像白噪音</callout>（隨機、無結構）</li>
+      <li>如果有週期性 → channel impulse response 比 L taps 更長 → <strong>增加 tap 數量</strong></li>
+      <li>如果有低頻飄移 → 啟用 DC offset fitting</li>
+      <li>如果 amplitude 隨時間變化 → 系統不穩定</li>
+    </ul>
+    <p><strong>SNDR 計算：</strong></p>
+    <div class="eq">
+      SNDR = 10 &middot; log<sub>10</sub>( mean(y&sup2;) / mean(e&sup2;) )
+    </div>
+  </div></div>
+
+  <!-- PANEL 5 -->
+  <h3>子圖 (5)：SVD of A — 奇異值</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p><strong>是什麼：</strong>矩陣 A 的所有奇異值 &sigma;<sub>i</sub>，由 SVD 分解得到。</p>
+    <div class="eq">A = U &middot; &Sigma; &middot; V<sup>T</sup></div>
+    <p><strong>看什麼：</strong></p>
+    <ul>
+      <li><callout>奇異值越 flat（平坦）越好</callout></li>
+      <li>Flat = 所有方向的信息量均衡 = well-conditioned = 解穩定</li>
+      <li>如果有驟降 → 那些方向的 h[k] 難以確定 → ill-conditioned</li>
+    </ul>
+    <p><strong>Condition number：</strong></p>
+    <div class="eq">
+      cond(A) = &sigma;<sub>max</sub> / &sigma;<sub>min</sub>
+    </div>
+    <table>
+      <tr><th>Cond #</th><th>意義</th></tr>
+      <tr><td>1 ~ 3</td><td>非常好（PRBS 典型值 &asymp; 2.2）</td></tr>
+      <tr><td>10 ~ 100</td><td>勉強可以</td></tr>
+      <tr><td>&gt; 1000</td><td>不可靠，需要 regularization 或換 pattern</td></tr>
+    </table>
+    <p><strong>為什麼 PRBS 的 cond# 低？</strong></p>
+    <pre><code>A<sup>T</sup>A 的元素 [i,j] = N · R<sub>aa</sub>[i-j]
+                     = symbols 的自相關
+
+PRBS autocorrelation:
+  R[0]   = E[a²] = 5.0  (PAM4 平均功率)
+  R[k≠0] ≈ 0     (偽隨機 ≈ 白噪音)
+
+→ A<sup>T</sup>A ≈ 5N · I  (常數 × 單位矩陣)
+→ 所有 σ<sub>i</sub> ≈ √(5N)
+→ cond ≈ 1</code></pre>
+  </div></div>
+
+  <!-- PANEL 6 -->
+  <h3>子圖 (6)：Summary 文字</h3>
+  <div class="fig-row"><div class="fig-note">
+    <p>右下角的文字框總結整個 linear fit 的結果：</p>
+    <ul>
+      <li><strong>Model</strong>：使用的數學模型</li>
+      <li><strong>A 的大小</strong>：N &times; L = 方程式數 &times; 未知數</li>
+      <li><strong>Rank</strong>：= L 表示所有 tap 都可被唯一確定</li>
+      <li><strong>Cond#</strong>：condition number</li>
+      <li><strong>Verify row</strong>：代回一行驗算，確認 &Sigma; h[k]·a[n-k] &asymp; y[n]</li>
+      <li><strong>R&sup2;、SNDR</strong>：最終擬合品質</li>
+    </ul>
+  </div></div>
+
+  <!-- SIX PANELS STORY -->
+  <h3>六張圖的邏輯串連</h3>
+  <div class="key">
+    <ol>
+      <li><strong>圖(1)</strong>：我們建了什麼方程組？→ Toeplitz 矩陣，每行是 symbols 的 shift</li>
+      <li><strong>圖(2)</strong>：一條方程式長什麼樣？→ h[k] 乘上哪些 symbol 值</li>
+      <li><strong>圖(3)</strong>：解出來準嗎？→ y vs A·h 越重疊越好</li>
+      <li><strong>圖(4)</strong>：不準的部分長什麼樣？→ 殘差應該是白噪音</li>
+      <li><strong>圖(5)</strong>：方程組穩定嗎？→ flat SVD = 穩定</li>
+      <li><strong>圖(6)</strong>：所有數字一覽</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 6: HISTOGRAM -->
+<!-- ============================================================ -->
+<section id="tab-hist">
+  <h2>Tab 6: Histogram — Level 分佈</h2>
+  <div class="fig-section"><img src="tutorial_img/histogram.png" alt="Histogram"></div>
+
+  <h3>看什麼</h3>
+  <div class="fig-row"><div class="fig-note">
+    <table>
+      <tr><th>顏色</th><th>代表</th></tr>
+      <tr><td><span style="color:#e74c3c;">&#9632;</span> 紅</td><td>被 classify 到 Level −3 的 samples</td></tr>
+      <tr><td><span style="color:#e67e22;">&#9632;</span> 橘</td><td>Level −1</td></tr>
+      <tr><td><span style="color:#2ecc71;">&#9632;</span> 綠</td><td>Level +1</td></tr>
+      <tr><td><span style="color:#3498db;">&#9632;</span> 藍</td><td>Level +3</td></tr>
+      <tr><td>灰色虛線</td><td>估計的四個 level 中心位置</td></tr>
+    </table>
+
+    <p><strong>看什麼：</strong></p>
+    <ul>
+      <li><callout>四個分佈應該清楚分開</callout>（不重疊）</li>
+      <li>各分佈的寬度 = noise + ISI 造成的散佈</li>
+      <li>Level 間距應該均等 → RLM &asymp; 1.0</li>
+      <li>分佈形狀應接近 Gaussian（中央極限定理）</li>
+    </ul>
+
+    <p><strong>RLM (Ratio Level Mismatch)：</strong></p>
+    <div class="eq">
+      RLM = 3 &times; min(&Delta;V<sub>01</sub>, &Delta;V<sub>12</sub>, &Delta;V<sub>23</sub>) / V<sub>swing</sub>
+    </div>
+    <p>理想 = 1.0。&lt; 0.9 表示 level 間距不均，可能是非線性問題。</p>
+
+    <p><strong>如果分佈重疊嚴重：</strong></p>
+    <ul>
+      <li>Channel loss 太大 → level 被壓縮</li>
+      <li>Noise 太大 → 每個 level 的散佈太寬</li>
+      <li>→ BER 會很高</li>
+    </ul>
+  </div></div>
+</section>
+
+<!-- ============================================================ -->
+<!-- MATH DEEP DIVE -->
+<!-- ============================================================ -->
+<section id="math">
+  <h2>數學推導</h2>
+
+  <h3>A. 從摺積到矩陣方程</h3>
+  <p>量測信號是 symbols 和 channel pulse 的摺積：</p>
+  <div class="eq">
+    y[n] = (a * h)[n] = &Sigma;<sub>k=0</sub><sup>L-1</sup> h[k] &middot; a[n&minus;k]
+  </div>
+  <p>寫成矩陣形式：y = A &middot; h，其中 A 是 Toeplitz 矩陣。</p>
+  <p>如果有 N 個 output samples 和 L 個 taps：A 是 N&times;L，方程組是<strong>超定的</strong>（N &gt;&gt; L）。</p>
+
+  <h3>B. Least Squares 求解</h3>
+  <div class="eq">
+    ĥ = argmin<sub>h</sub> &Vert; y &minus; A·h &Vert;&sup2;
+  </div>
+  <p><strong>Normal Equation：</strong></p>
+  <div class="eq">
+    A<sup>T</sup>A · ĥ = A<sup>T</sup>y &ensp;⟹&ensp; ĥ = (A<sup>T</sup>A)<sup>−1</sup> A<sup>T</sup>y
+  </div>
+
+  <p><strong>幾何意義：</strong>把 y 投影到 A 的 column space 上。殘差 e = y − Aĥ 垂直於 column space：</p>
+  <div class="eq">A<sup>T</sup> · e = 0</div>
+
+  <h3>C. SVD 解法（數值穩定）</h3>
+  <pre><code>A = U · Σ · V<sup>T</sup>
+
+ĥ = V · Σ<sup>−1</sup> · U<sup>T</sup> · y
+
+其中 Σ<sup>−1</sup> = diag(1/σ₁, 1/σ₂, ..., 1/σ_L)
+
+如果 σ_k 很小 → 1/σ_k 很大 → 放大噪音 → 解不穩定
+如果所有 σ_k 差不多大（PRBS 的情況）→ 解非常穩定</code></pre>
+
+  <h3>D. Regularization（正則化）</h3>
+  <p>當 cond# 過大時，加 Tikhonov regularization：</p>
+  <div class="eq">
+    ĥ = (A<sup>T</sup>A + &lambda;I)<sup>−1</sup> A<sup>T</sup>y
+  </div>
+  <p>&lambda; &gt; 0 防止 1/&sigma;<sub>k</sub> 爆掉，代價是引入少量 bias。對 PRBS 通常不需要。</p>
+
+  <h3>E. PRBS 為什麼適合做 Linear Fit</h3>
+  <pre><code>PRBS 的自相關：R[τ] = E[a[n]·a[n+τ]]
+
+PAM4 ({-3,-1,+1,+3}) 的統計：
+  E[a]  = 0        （均值為零）
+  E[a²] = (9+1+1+9)/4 = 5.0  （功率 = 5）
+  R[0]  = 5.0
+  R[τ≠0] ≈ 0      （偽隨機序列近似白噪音）
+
+→ A<sup>T</sup>A ≈ 5N · I  （5N 倍的單位矩陣）
+→ (A<sup>T</sup>A)<sup>−1</sup> ≈ (1/5N) · I
+→ ĥ ≈ (1/5N) · A<sup>T</sup>y  （類似 matched filter）
+→ Condition number ≈ 1  （理想情況）</code></pre>
+</section>
+
+<!-- ============================================================ -->
+<!-- GUI GUIDE -->
+<!-- ============================================================ -->
+<section id="gui">
+  <h2>GUI 操作指南</h2>
+  <h3>啟動</h3>
+  <pre><code>python gui.py</code></pre>
+  <h3>滑鼠操作（所有圖表通用）</h3>
+  <table>
+    <tr><th>操作</th><th>效果</th></tr>
+    <tr><td>滾輪上 / 下</td><td>以游標為中心放大 / 縮小</td></tr>
+    <tr><td>右鍵拖曳</td><td>框選區域放大</td></tr>
+    <tr><td>右鍵雙擊</td><td>重置到原始比例</td></tr>
+  </table>
+  <h3>驗證 Checklist</h3>
+  <table>
+    <tr><th>項目</th><th>預期</th><th>不符時的處理</th></tr>
+    <tr><td>R&sup2;</td><td>&ge; 0.999</td><td>增加 tap 數量或檢查 alignment</td></tr>
+    <tr><td>SNDR (fit)</td><td>&asymp; noise SNR</td><td>模型不足或有非線性</td></tr>
+    <tr><td>Fitted vs Measured</td><td>幾乎重疊</td><td>tap 不夠或 pattern 太短</td></tr>
+    <tr><td>Pulse: 藍 vs 綠</td><td>完全重疊</td><td>linear fit 有問題</td></tr>
+    <tr><td>AC: 藍 vs 綠</td><td>完全重疊</td><td>頻域驗證有問題</td></tr>
+    <tr><td>Condition #</td><td>&asymp; 2</td><td>pattern 不夠隨機</td></tr>
+    <tr><td>Residual</td><td>白噪音狀</td><td>有結構 → 增加 taps</td></tr>
+  </table>
+</section>
+
+</div>
+<footer>PAM4 SerDes TX Linear Fit Framework &mdash; numpy / scipy / matplotlib</footer>
+</body>
+</html>
