@@ -61,9 +61,11 @@
   <a href="#tab-waveform">Waveform</a>
   <a href="#tab-eye">Eye</a>
   <a href="#tab-pulse">Pulse</a>
+  <a href="#tab-step">Step</a>
   <a href="#tab-ac">AC</a>
   <a href="#tab-linfit">Linear Fit</a>
   <a href="#tab-hist">Histogram</a>
+  <a href="#faq">FAQ</a>
   <a href="#math">Math</a>
 </div></nav>
 
@@ -137,6 +139,26 @@
 </section>
 
 <!-- ============================================================ -->
+<!-- TAB 1b: WAVEFORM (OS) -->
+<!-- ============================================================ -->
+<section id="tab-waveform-os">
+  <h2>Tab 1b: Waveform (OS) — Oversampled 波形</h2>
+  <div class="fig-section"><img src="tutorial_img/waveform_os.png" alt="Waveform OS"></div>
+  <h3>看什麼</h3>
+  <table>
+    <tr><th>圖</th><th>內容</th><th>注意事項</th></tr>
+    <tr><td>上圖（藍）</td><td>Ideal PRBS (ZOH)：完美方波，每個 symbol 維持 1 UI</td>
+        <td>Rise/fall 幾乎是瞬間的（1 sample = 1/64 UI）<br>只有 {-3,-1,+1,+3} 四個 level</td></tr>
+    <tr><td>下圖（紅）</td><td>Measured：通過 channel 後的類比波形</td>
+        <td>轉換變慢（rise time 增加）<br>振幅被壓縮<br>有 ISI（相鄰 symbol 互相干擾）<br>overshoot / ringing 可能出現</td></tr>
+  </table>
+  <div class="note">
+    <strong>跟 Tab 1 的差異：</strong>Tab 1 是 1 sample/UI（只看 sampling 點的值），
+    這裡是完整的 oversampled 波形（64 samp/UI），可以看到 transition 的完整形狀。
+  </div>
+</section>
+
+<!-- ============================================================ -->
 <!-- TAB 2: EYE DIAGRAM -->
 <!-- ============================================================ -->
 <section id="tab-eye">
@@ -205,6 +227,31 @@
   <h3>下圖：Extraction Error</h3>
   <p>每個 tap 的 extracted − true 差值。RMS 值越小代表提取越準確。</p>
   <p>典型值：RMS &lt; 0.001 表示提取非常準確。</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- TAB 3b: STEP RESPONSE -->
+<!-- ============================================================ -->
+<section id="tab-step">
+  <h2>Tab 3b: Step Response — 階躍響應</h2>
+  <div class="fig-section"><img src="tutorial_img/step_response.png" alt="Step Response"></div>
+  <h3>Step Response 是什麼</h3>
+  <div class="eq">step[n] = &Sigma;<sub>k=0</sub><sup>n</sup> h[k] = cumsum(pulse response)</div>
+  <p>就是 pulse response 的<strong>累積和</strong>。物理意義：如果輸入一個 step（從 0 跳到 1），輸出的波形就是 step response。</p>
+
+  <h3>看什麼</h3>
+  <table>
+    <tr><th>特徵</th><th>意義</th></tr>
+    <tr><td>Final value</td><td>系統的 DC gain。理想值 = 1.0（無 loss 時 pulse response 總和 = 1）</td></tr>
+    <tr><td>50% point（紫星）</td><td>上升到一半所需的 tap 數，反映 channel 的 group delay</td></tr>
+    <tr><td>上升斜率</td><td>越陡 = channel bandwidth 越大，transition 越快</td></tr>
+    <tr><td>收斂速度</td><td>多少 tap 後趨於穩定？越慢 = ISI 越嚴重，需要更多 tap</td></tr>
+    <tr><td>Overshoot / ringing</td><td>超越 final value 再回來 = channel 有 peaking</td></tr>
+  </table>
+  <div class="note">
+    <strong>在 SI 分析中：</strong>Step response 常用來判斷 channel 的 rise time 和 settling behavior。
+    如果 step response 收斂太慢 → equalizer 需要更多 tap 來補償。
+  </div>
 </section>
 
 <!-- ============================================================ -->
@@ -418,6 +465,28 @@ PRBS autocorrelation:
     </ul>
   </div></div>
 
+  <!-- CONFIDENCE INTERVAL -->
+  <h3>Confidence Interval（信賴區間）</h3>
+  <p>在 Pulse Response 圖上，每個 tap 周圍的<strong>淡藍色陰影</strong>是 95% confidence interval。</p>
+  <div class="eq">
+    Cov(ĥ) = &sigma;&sup2; &middot; (A<sup>T</sup>A)<sup>&minus;1</sup>
+  </div>
+  <p>其中 &sigma;&sup2; = SS<sub>res</sub> / (N &minus; L) 是 noise variance 的估計值。</p>
+  <p>每個 tap 的標準差：<code>std(h[k]) = sqrt( Cov[k,k] )</code></p>
+  <p>95% CI = <code>h[k] &plusmn; 1.96 &times; std(h[k])</code></p>
+  <table>
+    <tr><th>看什麼</th><th>意義</th></tr>
+    <tr><td>CI 很窄</td><td>該 tap 的值很確定（精度高）</td></tr>
+    <tr><td>CI 很寬</td><td>該 tap 的值不確定（可能被噪音主導）</td></tr>
+    <tr><td>relative CI &lt; 1%</td><td>非常可靠</td></tr>
+    <tr><td>relative CI &gt; 50%</td><td>該 tap 基本上是噪音，不具物理意義</td></tr>
+  </table>
+  <div class="note">
+    <strong>PRBS 的優勢：</strong>因為 A<sup>T</sup>A &asymp; 5N&middot;I，所以
+    Cov(ĥ) &asymp; (&sigma;&sup2;/5N)&middot;I，每個 tap 的 CI 都一樣寬（均勻可靠）。
+    如果用非 PRBS pattern，某些 tap 的 CI 可能比其他的寬很多。
+  </div>
+
   <!-- SIX PANELS STORY -->
   <h3>六張圖的邏輯串連</h3>
   <div class="key">
@@ -529,6 +598,137 @@ PAM4 ({-3,-1,+1,+3}) 的統計：
 → (A<sup>T</sup>A)<sup>−1</sup> ≈ (1/5N) · I
 → ĥ ≈ (1/5N) · A<sup>T</sup>y  （類似 matched filter）
 → Condition number ≈ 1  （理想情況）</code></pre>
+</section>
+
+<!-- ============================================================ -->
+<!-- FAQ -->
+<!-- ============================================================ -->
+<section id="faq">
+  <h2>常見問題 FAQ</h2>
+
+  <h3>Q1: Tap 數量要設多少？</h3>
+  <p>取決於 channel 的 impulse response 長度：</p>
+  <table>
+    <tr><th>Channel 類型</th><th>建議 taps</th></tr>
+    <tr><td>Short reach（&lt; 5 dB loss）</td><td>11 ~ 21</td></tr>
+    <tr><td>Medium reach（5-15 dB）</td><td>21 ~ 41</td></tr>
+    <tr><td>Long reach（&gt; 15 dB）</td><td>41 ~ 101</td></tr>
+  </table>
+  <p><strong>判斷方法：</strong>跑一次後看 residual，如果有週期性結構就增加 tap 數。
+     或看 step response 是否已經收斂到 final value。</p>
+
+  <h3>Q2: R&sup2; 很低怎麼辦？</h3>
+  <ol>
+    <li>增加 tap 數量（channel 可能有長尾）</li>
+    <li>檢查 alignment（lag 是否合理）</li>
+    <li>檢查 CDR phase（相位是否最佳）</li>
+    <li>啟用 DC offset fitting</li>
+    <li>如果以上都做了還是低 → 系統可能有非線性（此工具假設線性）</li>
+  </ol>
+
+  <h3>Q3: 眼圖完全閉合怎麼辦？</h3>
+  <p>眼圖閉合代表 channel loss 太大，不代表 linear fit 有問題。嘗試：</p>
+  <ul>
+    <li>降低 channel IL（例如 -5 dB）</li>
+    <li>降低 noise（增加 SNR）</li>
+    <li>在實際系統中：需要 equalization (CTLE/DFE/FFE)</li>
+  </ul>
+
+  <h3>Q4: SNDR 比設定的 noise SNR 低很多？</h3>
+  <ul>
+    <li>Tap 不夠 → channel 的 tail 沒有被完整 capture</li>
+    <li>Circular convolution artifact → 波形開頭和結尾的 edge effect</li>
+    <li>Alignment 不準 → 部分 symbol 對應錯誤</li>
+  </ul>
+
+  <h3>Q5: 為什麼提取的 IL 跟設定的不一樣？</h3>
+  <p>因為提取的 pulse response 是在 1 sps 下的<strong>等效響應</strong>，包含：</p>
+  <ul>
+    <li>ZOH sinc 衰減（在 Nyquist 約 -3.9 dB）</li>
+    <li>降採樣的 aliasing（sinc 旁瓣能量摺疊回來）</li>
+  </ul>
+  <p>→ 看 AC Response 圖的藍線和綠線是否重疊。如果重疊，提取就是正確的。</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- CHANNEL COMPARISON -->
+<!-- ============================================================ -->
+<section id="channel-cmp">
+  <h2>Channel Loss 模型比較</h2>
+  <table>
+    <tr><th>模型</th><th>公式</th><th>物理來源</th><th>適用場景</th></tr>
+    <tr><td><strong>Linear</strong></td>
+        <td>IL(f) = IL<sub>nyq</sub> &times; f/f<sub>nyq</sub></td>
+        <td>簡化模型</td>
+        <td>快速模擬、初步估算</td></tr>
+    <tr><td><strong>Sqrt (skin effect)</strong></td>
+        <td>IL(f) = IL<sub>nyq</sub> &times; &radic;(f/f<sub>nyq</sub>)</td>
+        <td>導體中的集膚效應：電流集中在導體表面，電阻 &prop; &radic;f</td>
+        <td>中短距離 PCB trace</td></tr>
+    <tr><td><strong>a&radic;f + bf</strong></td>
+        <td>IL(f) = a&radic;f + b&middot;f</td>
+        <td>a = skin effect，b = dielectric loss</td>
+        <td>完整 PCB/cable 模型</td></tr>
+    <tr><td><strong>S-parameter</strong></td>
+        <td>從 .s4p 檔案讀取</td>
+        <td>實測或 EM 模擬</td>
+        <td>最精確，真實系統</td></tr>
+  </table>
+  <div class="note">
+    <strong>本工具目前支援 linear 和 sqrt。</strong>
+    a&radic;f + bf 和 S-parameter 在未來版本加入。
+  </div>
+
+  <h3>同一 IL@Nyquist 下不同模型的差異</h3>
+  <pre><code>例：IL@Nyquist = -10 dB，f_nyq = 14 GHz
+
+頻率      Linear     Sqrt       差異
+─────     ──────     ──────     ────
+ 2 GHz    -1.4 dB    -3.8 dB    sqrt 在低頻衰減更多
+ 7 GHz    -5.0 dB    -7.1 dB
+14 GHz   -10.0 dB   -10.0 dB    定義點，相同
+
+→ sqrt 模型的 loss 集中在低頻（skin effect 特性）
+→ linear 模型的 loss 均勻分佈在所有頻率</code></pre>
+</section>
+
+<!-- ============================================================ -->
+<!-- PRBS COMPARISON -->
+<!-- ============================================================ -->
+<section id="prbs-cmp">
+  <h2>PRBS Pattern 比較</h2>
+  <table>
+    <tr><th>Pattern</th><th>Polynomial</th><th>Period</th><th>適合的 channel 長度</th></tr>
+    <tr><td>PRBS7</td><td>x<sup>7</sup>+x<sup>6</sup>+1</td><td>127</td><td>短 channel（&lt; 10 tap）</td></tr>
+    <tr><td><strong>PRBS9</strong></td><td>x<sup>9</sup>+x<sup>5</sup>+1</td><td>511</td><td>中等 channel</td></tr>
+    <tr><td>PRBS13</td><td>x<sup>13</sup>+x<sup>12</sup>+x<sup>2</sup>+x+1</td><td>8191</td><td>長 channel</td></tr>
+    <tr><td>PRBS15</td><td>x<sup>15</sup>+x<sup>14</sup>+1</td><td>32767</td><td>很長的 channel</td></tr>
+    <tr><td>PRBS31</td><td>x<sup>31</sup>+x<sup>28</sup>+1</td><td>2.1&times;10<sup>9</sup></td><td>BER 測試用</td></tr>
+  </table>
+
+  <h3>PAM4 的 Quaternary PRBS</h3>
+  <table>
+    <tr><th>Pattern</th><th>做法</th><th>用途</th></tr>
+    <tr><td><strong>PRBSQ9</strong></td>
+        <td>兩個 decorrelated PRBS9 組成 MSB/LSB</td>
+        <td>PAM4 linear fit（4 level 都有覆蓋）</td></tr>
+    <tr><td>PRBS9 pairs</td>
+        <td>一個 PRBS9 取連續 2 bit 為一組</td>
+        <td>替代方案，但 level 分佈可能不均</td></tr>
+  </table>
+
+  <h3>Pattern 長度對 Linear Fit 的影響</h3>
+  <pre><code>Pattern 越長：
+  ✓ 方程式越多（N 越大）→ 統計上越可靠
+  ✓ autocorrelation 越接近 delta → cond# 越低
+  ✓ 對長 channel 的 tail 也能 capture
+  ✗ 計算時間增加（矩陣更大）
+  ✗ 記憶體用量增加
+
+建議：
+  N (symbols) >= 10 × L (taps) 以上
+  例：L = 31 taps → 至少 310 symbols → 1 個 PRBS9 period (511) 就夠
+      L = 101 taps → 至少 1010 symbols → 用 2~4 個 period</code></pre>
 </section>
 
 <!-- ============================================================ -->

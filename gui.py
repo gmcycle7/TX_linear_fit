@@ -169,7 +169,8 @@ class App(tk.Tk):
     # ---- tabs ---
     def _mk_tabs(self):
         self.figs, self.cvs = {}, {}
-        for name in ["Waveform", "Eye Diagram", "Pulse Response",
+        for name in ["Waveform", "Waveform (OS)", "Eye Diagram",
+                     "Pulse Response", "Step Response",
                      "AC Response", "Linear Fit", "Histogram"]:
             f = ttk.Frame(self.nb); self.nb.add(f, text=name)
             fig = Figure(figsize=(9, 5), dpi=100)
@@ -556,13 +557,40 @@ class App(tk.Tk):
         self._pr(f"  SNDR (fit)   = {sndr:.2f} dB")
         self._met("sf", f"{sndr:.2f} dB")
 
+        # ============================================================
+        #  STEP 4-H: Confidence interval  (from covariance matrix)
+        # ============================================================
+        sigma2 = ss_res / max(N - L, 1)           # noise variance estimate
+        try:
+            ATA_inv = np.linalg.inv(A.T @ A)
+            cov = sigma2 * ATA_inv                 # covariance of h_est
+            h_std = np.sqrt(np.diag(cov))          # 1-sigma per tap
+        except np.linalg.LinAlgError:
+            h_std = np.full(L, np.nan)
+
+        self._pr("")
+        self._pr("-" * 62)
+        self._pr("  4-H: Confidence interval (95%)")
+        self._pr("-" * 62)
+        self._pr(f"  Noise variance estimate (sigma^2) = {sigma2:.8f}")
+        self._pr(f"  Cov(h) = sigma^2 * (A^T A)^-1")
+        self._pr("")
+        self._pr(f"  {'k':>4s}   {'h[k]':>12s}   {'+-95% CI':>10s}   "
+                 f"{'relative':>8s}")
+        for k in range(L):
+            ci95 = 1.96 * h_std[k]
+            rel = ci95 / abs(h_est[k]) * 100 if abs(h_est[k]) > 1e-12 else 0
+            tag = " <--" if k == cp else ""
+            self._pr(f"  {k:>4d}   {h_est[k]:>12.8f}   {ci95:>10.8f}   "
+                     f"{rel:>7.2f}%{tag}")
+
         self.pulse_est = h_est
         self.ext_info = dict(
             cursor_pos=cp, dc_offset=dc,
             signal_reconstructed=y_hat, residual=resid,
             condition_number=cond, valid_slice=vs,
             singular_values=sv, r_squared=r2,
-            A_matrix=A, y_signal=y)
+            A_matrix=A, y_signal=y, h_std=h_std)
 
     # ---- Compute ground-truth pulse via impulse test --------------------
     def _compute_true_pulse(self):
@@ -655,8 +683,10 @@ class App(tk.Tk):
     # =================================================================
     def _draw_all(self):
         self._draw_waveform()
+        self._draw_waveform_os()
         self._draw_eye()
         self._draw_pulse()
+        self._draw_step()
         self._draw_ac()
         self._draw_linfit()
         self._draw_hist()
@@ -700,6 +730,39 @@ class App(tk.Tk):
         ax2.grid(True, alpha=0.3)
 
         fig.tight_layout(); self.cvs["Waveform"].draw()
+
+    # ---- Waveform (oversampled) -----------------------------------------
+    def _draw_waveform_os(self):
+        fig = self.figs["Waveform (OS)"]; fig.clear()
+        if self.ideal_os is None or self.meas_os is None:
+            self._placeholder(fig, "Waveform (OS)"); return
+
+        spui = self.v_spui.get()
+        N_ui = 15                    # show 15 UI
+        N_samp = N_ui * spui
+        # skip initial transient (channel delay)
+        skip = 8 * spui
+        t_ui = np.arange(N_samp) / spui
+
+        ideal_seg = self.ideal_os[skip:skip + N_samp]
+        meas_seg  = self.meas_os[skip:skip + N_samp]
+        n = min(len(ideal_seg), len(meas_seg), N_samp)
+        t_ui = t_ui[:n]; ideal_seg = ideal_seg[:n]; meas_seg = meas_seg[:n]
+
+        ax1 = fig.add_subplot(2, 1, 1)
+        ax1.plot(t_ui, ideal_seg, "b-", lw=0.8, label="Ideal PRBS (ZOH)")
+        ax1.set_ylabel("Amplitude")
+        ax1.set_title(f"Oversampled Waveforms  ({spui} samp/UI, "
+                      f"first {N_ui} UI)")
+        ax1.legend(fontsize=8); ax1.grid(True, alpha=0.3)
+
+        ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
+        ax2.plot(t_ui, meas_seg, "r-", lw=0.8,
+                 label="Measured (after channel)")
+        ax2.set_xlabel("Time (UI)"); ax2.set_ylabel("Amplitude")
+        ax2.legend(fontsize=8); ax2.grid(True, alpha=0.3)
+
+        fig.tight_layout(); self.cvs["Waveform (OS)"].draw()
 
     # ---- Eye diagram (white background) --------------------------------
     def _draw_eye(self):
@@ -750,6 +813,9 @@ class App(tk.Tk):
         has_true = (self.true_pulse is not None
                     and len(self.true_pulse) == len(h))
 
+        h_std = self.ext_info.get("h_std")
+        has_ci = h_std is not None and not np.any(np.isnan(h_std))
+
         if has_true:
             ax1 = fig.add_subplot(2, 1, 1)
             ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
@@ -757,9 +823,13 @@ class App(tk.Tk):
                      markerfmt="gs", basefmt="k-", label="True (impulse)")
             ax1.stem(taps + 0.15, h, linefmt="b-",
                      markerfmt="bo", basefmt="k-", label="Extracted")
+            if has_ci:
+                ci95 = 1.96 * h_std
+                ax1.fill_between(taps + 0.15, h - ci95, h + ci95,
+                                 color="blue", alpha=0.15, label="95% CI")
             ax1.axhline(0, color="gray", lw=0.5, ls="--")
             ax1.set_ylabel("Amplitude")
-            ax1.set_title("Pulse Response: Extracted vs True")
+            ax1.set_title("Pulse Response: Extracted vs True  (shading = 95% CI)")
             ax1.legend(fontsize=8); ax1.grid(True, alpha=0.3)
 
             err = h - self.true_pulse
@@ -785,6 +855,51 @@ class App(tk.Tk):
             ax.set_title("Extracted Channel Pulse Response")
             ax.legend(); ax.grid(True, alpha=0.3)
         fig.tight_layout(); self.cvs["Pulse Response"].draw()
+
+    # ---- Step response ---------------------------------------------------
+    def _draw_step(self):
+        fig = self.figs["Step Response"]; fig.clear()
+        if self.pulse_est is None:
+            self._placeholder(fig, "Step Response"); return
+
+        h = self.pulse_est
+        cp = self.ext_info["cursor_pos"]
+        taps = np.arange(len(h)) - cp
+        step = np.cumsum(h)            # pulse → step
+
+        has_true = (self.true_pulse is not None
+                    and len(self.true_pulse) == len(h))
+
+        ax1 = fig.add_subplot(2, 1, 1)
+        ax1.stem(taps, h, linefmt="b-", markerfmt="bo", basefmt="k-",
+                 label="Pulse response h[k]")
+        ax1.axhline(0, color="gray", lw=.5, ls="--")
+        ax1.set_ylabel("Amplitude")
+        ax1.set_title("Pulse Response  h[k]")
+        ax1.legend(fontsize=8); ax1.grid(True, alpha=.3)
+
+        ax2 = fig.add_subplot(2, 1, 2, sharex=ax1)
+        ax2.plot(taps, step, "r-o", lw=1.2, ms=3, label="Step response (cumsum)")
+        if has_true:
+            step_true = np.cumsum(self.true_pulse)
+            ax2.plot(taps, step_true, "g--s", lw=1, ms=3, alpha=.7,
+                     label="True step (impulse test)")
+        # Mark key values
+        final = step[-1]
+        ax2.axhline(final, color="orange", lw=.8, ls="--",
+                    label=f"Final value = {final:.4f}")
+        half_idx = np.argmin(np.abs(step - final / 2))
+        ax2.axhline(final / 2, color="purple", lw=.6, ls=":")
+        ax2.plot(taps[half_idx], step[half_idx], "m*", ms=10,
+                 label=f"50% point @ tap {taps[half_idx]}")
+
+        ax2.set_xlabel("Tap (relative to cursor)")
+        ax2.set_ylabel("Cumulative sum")
+        ax2.set_title("Step Response = cumsum(h)   "
+                      "(rise time = how fast the channel settles)")
+        ax2.legend(fontsize=7, loc="right"); ax2.grid(True, alpha=.3)
+
+        fig.tight_layout(); self.cvs["Step Response"].draw()
 
     # ---- AC Response: extracted vs true pulse vs known channel ----------
     def _draw_ac(self):
