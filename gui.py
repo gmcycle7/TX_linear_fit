@@ -28,7 +28,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle as _MplRect
 
 from serdes_tx import (
-    generate_pam4_prbs9, generate_pam4_prbsq9,
+    generate_pam_prbs, pam_levels, SUPPORTED_PAM,
+    SUPPORTED_ORDERS, prbs_period, prbs_info,
     upsample_pam4, GRAY_LEVELS,
     align_by_correlation, find_optimal_phase, downsample,
     extract_pulse_response,
@@ -118,16 +119,21 @@ class App(tk.Tk):
         # -- Signal --
         lf = ttk.LabelFrame(inner, text="Signal Generation")
         lf.pack(fill=tk.X, **P)
-        self.v_pat = tk.StringVar(value="PRBSQ9")
-        self._row(lf, 0, "Pattern:", self.v_pat,
-                  widget="combo", values=["PRBS9","PRBSQ9"])
+        self.v_pam = tk.IntVar(value=4)
+        self._row(lf, 0, "PAM order:", self.v_pam,
+                  widget="combo",
+                  values=[str(m) for m in SUPPORTED_PAM])
+        self.v_prbs = tk.IntVar(value=9)
+        self._row(lf, 1, "PRBS order:", self.v_prbs,
+                  widget="combo",
+                  values=[str(o) for o in SUPPORTED_ORDERS])
         self.v_nsym = tk.IntVar(value=4088)
-        self._row(lf, 1, "Symbols:", self.v_nsym)
+        self._row(lf, 2, "Symbols:", self.v_nsym)
         self.v_spui = tk.IntVar(value=64)
-        self._row(lf, 2, "Samp/UI:", self.v_spui,
+        self._row(lf, 3, "Samp/UI:", self.v_spui,
                   widget="combo", values=["8","16","32","64","128"])
         self.v_baud = tk.DoubleVar(value=28.0)
-        self._row(lf, 3, "Baud (GHz):", self.v_baud)
+        self._row(lf, 4, "Baud (GHz):", self.v_baud)
 
         # -- Channel --
         lf2 = ttk.LabelFrame(inner, text="Channel (System Under Test)")
@@ -290,16 +296,22 @@ class App(tk.Tk):
     def _step1_gen_ideal(self):
         self._pr("--- Step 1: Generate Ideal PRBS (no ISI) ---")
         n = self.v_nsym.get()
-        if self.v_pat.get() == "PRBSQ9":
-            self.symbols, _ = generate_pam4_prbsq9(length=n)
-        else:
-            self.symbols, _ = generate_pam4_prbs9(length=n)
+        pam_ord = self.v_pam.get()
+        prbs_ord = self.v_prbs.get()
+        per, poly = prbs_info(prbs_ord)
+        lvls = pam_levels(pam_ord)
+
+        self.symbols = generate_pam_prbs(
+            pam_order=pam_ord, prbs_order=prbs_ord, length=n)
+
         spui = self.v_spui.get()
         self.ideal_os = upsample_pam4(self.symbols, spui, method="zoh")
-        self._pr(f"  Pattern: {self.v_pat.get()},  {n} symbols")
+
+        self._pr(f"  PAM{pam_ord}  PRBS{prbs_ord}  ({poly})")
+        self._pr(f"  Period = {per},  Symbols = {n}")
+        self._pr(f"  Levels: {lvls}")
         self._pr(f"  Oversampled: {len(self.ideal_os)} samples  "
                  f"({spui} samp/UI)")
-        self._pr(f"  Rise/fall: ~1/{spui} UI  (ZOH)")
 
     # ---- Step 2: Apply channel loss -----------------------------------
     def _step2_channel(self):

@@ -1,18 +1,138 @@
-"""PAM4 signal generation and encoding with Gray coding.
+"""PAM signal generation for PAM2 / PAM4 / PAM6 / PAM8.
 
-Gray-coded mapping:
-    MSB  LSB  ->  Index  ->  Level
-     0    0   ->    0    ->   -3
-     0    1   ->    1    ->   -1
-     1    1   ->    2    ->   +1
-     1    0   ->    3    ->   +3
+Supports arbitrary PRBS order (7-31) and PAM order (2/4/6/8).
+Gray coding is used for power-of-2 PAM orders.
 """
 
 import numpy as np
-from .prbs import generate_prbs9, generate_prbsq9
+from .prbs import generate_prbs, SUPPORTED_ORDERS, prbs_period
 
-# Normalized PAM4 levels
+# =====================================================================
+#  General PAM support
+# =====================================================================
+SUPPORTED_PAM = [2, 4, 6, 8]
+
+
+def pam_levels(pam_order):
+    """Return normalized PAM levels: [-M+1, -M+3, ..., M-3, M-1].
+
+    PAM2: [-1, +1]
+    PAM4: [-3, -1, +1, +3]
+    PAM6: [-5, -3, -1, +1, +3, +5]
+    PAM8: [-7, -5, -3, -1, +1, +3, +5, +7]
+    """
+    M = int(pam_order)
+    return np.array([2 * i - (M - 1) for i in range(M)], dtype=np.float64)
+
+
+def _gray_encode(n, bits):
+    """Binary to Gray code."""
+    return n ^ (n >> 1)
+
+
+def _bits_to_int(bit_group):
+    """Convert a group of bits [MSB, ..., LSB] to integer."""
+    val = 0
+    for b in bit_group:
+        val = (val << 1) | int(b)
+    return val
+
+
+def generate_pam_prbs(pam_order=4, prbs_order=9, length=None, seed=None):
+    """Generate a PAM signal from a PRBS bit stream.
+
+    Parameters
+    ----------
+    pam_order : int
+        Number of levels: 2, 4, 6, or 8.
+    prbs_order : int
+        PRBS order: 7, 9, 11, 13, 15, 20, 23, or 31.
+    length : int or None
+        Number of PAM symbols. None = one PRBS period worth.
+    seed : int or None
+        PRBS LFSR seed. None = all-ones.
+
+    Returns
+    -------
+    symbols : np.ndarray, float64
+        PAM symbol values.
+    """
+    M = int(pam_order)
+    if M not in SUPPORTED_PAM:
+        raise ValueError(f"PAM order {M} not supported. Choose from {SUPPORTED_PAM}")
+
+    levels = pam_levels(M)
+    bits_per_sym = int(np.ceil(np.log2(M)))
+
+    if length is None:
+        length = prbs_period(prbs_order)
+
+    # Generate enough PRBS bits
+    n_bits = length * bits_per_sym * 2  # extra for non-power-of-2 rejection
+    bits = generate_prbs(prbs_order, length=n_bits, seed=seed)
+
+    if M in (2, 4, 8):
+        # Power-of-2: use Gray coding with decorrelated PRBS streams
+        return _pam_pow2(M, prbs_order, length, bits_per_sym, levels, seed)
+    else:
+        # Non-power-of-2: modular mapping
+        return _pam_mod(M, bits, bits_per_sym, length, levels)
+
+
+def _pam_pow2(M, prbs_order, length, bps, levels, seed):
+    """PAM for power-of-2 orders using decorrelated PRBS streams.
+
+    Uses one long PRBS sequence split into offset-separated segments
+    for guaranteed decorrelation.
+    """
+    period = (1 << prbs_order) - 1
+    # Generate one long PRBS, take segments at evenly-spaced offsets
+    total = length + period  # enough for all offsets
+    base_seed = seed if seed is not None else (1 << prbs_order) - 1
+    long_prbs = generate_prbs(prbs_order, length=total, seed=base_seed)
+
+    offsets = [i * (period // (bps + 1)) for i in range(bps)]
+    streams = [long_prbs[off:off + length] for off in offsets]
+
+    # Combine bits → Gray index → level
+    indices = np.zeros(length, dtype=np.int32)
+    for b in range(bps):
+        indices |= streams[b].astype(np.int32) << (bps - 1 - b)
+
+    # Gray decode: gray_index → natural_index
+    natural = np.copy(indices)
+    shift = 1
+    while shift < M:
+        natural ^= (natural >> shift)
+        shift <<= 1
+
+    symbols = levels[np.clip(natural, 0, M - 1)]
+    return symbols
+
+
+def _pam_mod(M, bits, bps, length, levels):
+    """PAM for non-power-of-2 orders using modular mapping."""
+    symbols = np.empty(length, dtype=np.float64)
+    idx = 0
+    sym_count = 0
+    while sym_count < length and idx + bps <= len(bits):
+        val = _bits_to_int(bits[idx:idx + bps])
+        idx += bps
+        if val < M:  # reject values >= M
+            symbols[sym_count] = levels[val]
+            sym_count += 1
+    # If we ran out of bits, fill remaining with random levels
+    if sym_count < length:
+        rng = np.random.default_rng(42)
+        symbols[sym_count:] = rng.choice(levels, size=length - sym_count)
+    return symbols
+
+
+# Normalized PAM4 levels (backward compat)
 GRAY_LEVELS = np.array([-3.0, -1.0, 1.0, 3.0])
+
+# ---- backward-compatible imports ----
+from .prbs import generate_prbs9, generate_prbsq9
 
 
 def bits_to_pam4(msb, lsb):

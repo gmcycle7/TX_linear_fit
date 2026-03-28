@@ -15,14 +15,15 @@ channel : AWGN, ISI, bandwidth limitation, jitter
 visualization : Eye diagram, histogram, frequency response plots
 """
 
-from .prbs import generate_prbs9, generate_prbsq9, verify_prbs9
+from .prbs import (
+    generate_prbs, generate_prbs9, generate_prbsq9, verify_prbs9,
+    SUPPORTED_ORDERS, PRBS_POLYS, prbs_period, prbs_info,
+)
 from .pam4 import (
-    bits_to_pam4,
-    pam4_to_bits,
-    generate_pam4_prbs9,
-    generate_pam4_prbsq9,
-    upsample_pam4,
-    estimate_levels,
+    generate_pam_prbs, pam_levels, SUPPORTED_PAM,
+    bits_to_pam4, pam4_to_bits,
+    generate_pam4_prbs9, generate_pam4_prbsq9,
+    upsample_pam4, estimate_levels,
     GRAY_LEVELS,
 )
 from .cdr import (
