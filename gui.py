@@ -142,11 +142,19 @@ class App(tk.Tk):
         self._row(lf2, 0, "IL @ Nyq (dB):", self.v_il)
         self.v_loss_model = tk.StringVar(value="linear")
         self._row(lf2, 1, "Loss model:", self.v_loss_model,
-                  widget="combo", values=["linear","sqrt"])
+                  widget="combo", values=["linear", "sqrt", "a_sqrt_f_bf"])
+        # a√f+bf parameters (only used when model = a_sqrt_f_bf)
+        self.v_skin = tk.DoubleVar(value=0.5)
+        self._row(lf2, 2, "Skin coeff a:", self.v_skin)
+        self.v_diel = tk.DoubleVar(value=0.3)
+        self._row(lf2, 3, "Diel coeff b:", self.v_diel)
+        ttk.Label(lf2, text="(a,b: dB units @ GHz)",
+                  font=("", 7)).grid(row=4, column=0, columnspan=2,
+                                      sticky=tk.W, padx=6)
         self.v_ch_snr = tk.DoubleVar(value=40.0)
-        self._row(lf2, 2, "Noise SNR (dB):", self.v_ch_snr)
+        self._row(lf2, 5, "Noise SNR (dB):", self.v_ch_snr)
         self.v_ch_rj = tk.DoubleVar(value=0.5)
-        self._row(lf2, 3, "RJ (% UI):", self.v_ch_rj)
+        self._row(lf2, 6, "RJ (% UI):", self.v_ch_rj)
 
         # -- Extraction --
         lf3 = ttk.LabelFrame(inner, text="Pulse Extraction")
@@ -158,12 +166,28 @@ class App(tk.Tk):
                         variable=self.v_fitdc).grid(
             row=1, column=0, columnspan=2, sticky=tk.W, **P)
 
+        # -- Sweep --
+        lf5 = ttk.LabelFrame(inner, text="Parameter Sweep")
+        lf5.pack(fill=tk.X, **P)
+        self.v_sw_param = tk.StringVar(value="IL @ Nyq")
+        self._row(lf5, 0, "Sweep:", self.v_sw_param,
+                  widget="combo",
+                  values=["IL @ Nyq", "Noise SNR", "Num taps", "PRBS order"])
+        self.v_sw_start = tk.DoubleVar(value=-3.0)
+        self._row(lf5, 1, "Start:", self.v_sw_start)
+        self.v_sw_stop = tk.DoubleVar(value=-20.0)
+        self._row(lf5, 2, "Stop:", self.v_sw_stop)
+        self.v_sw_steps = tk.IntVar(value=8)
+        self._row(lf5, 3, "Steps:", self.v_sw_steps)
+
         # -- Buttons --
         lf4 = ttk.LabelFrame(inner, text="Actions")
         lf4.pack(fill=tk.X, **P)
         kw = dict(width=26)
         ttk.Button(lf4, text="\u25b6  Run Full Analysis",
                    command=self._run_all, **kw).pack(**P)
+        ttk.Button(lf4, text="\u25b6  Run Sweep",
+                   command=self._run_sweep, **kw).pack(**P)
         ttk.Separator(lf4).pack(fill=tk.X, pady=4)
         ttk.Button(lf4, text="Load Measured Waveform\u2026",
                    command=self._load, **kw).pack(**P)
@@ -177,7 +201,8 @@ class App(tk.Tk):
         self.figs, self.cvs = {}, {}
         for name in ["Waveform", "Waveform (OS)", "Eye Diagram",
                      "Pulse Response", "Step Response",
-                     "AC Response", "Linear Fit", "Histogram"]:
+                     "AC Response", "Linear Fit", "Histogram",
+                     "Sweep"]:
             f = ttk.Frame(self.nb); self.nb.add(f, text=name)
             fig = Figure(figsize=(9, 5), dpi=100)
             c = FigureCanvasTkAgg(fig, master=f)
@@ -326,13 +351,30 @@ class App(tk.Tk):
         f01 = np.fft.rfftfreq(N)              # 0 .. 0.5  (norm to f_s)
         f_baud_nyq = 0.5 / spui              # baud Nyquist normalised
 
-        # Magnitude
-        if model == "sqrt":
+        # Frequency in GHz (absolute)
+        f_ghz = f01 * spui * baud
+        f_nyq_ghz = baud / 2.0
+
+        # Magnitude response
+        if model == "a_sqrt_f_bf":
+            a = self.v_skin.get()
+            b = self.v_diel.get()
+            il_db = -(a * np.sqrt(f_ghz) + b * f_ghz)
+            il_db[0] = 0.0
+            il_at_nyq = -(a * np.sqrt(f_nyq_ghz) + b * f_nyq_ghz)
+            self._pr(f"  Model: IL(f) = -{a}*sqrt(f) - {b}*f  (dB, f in GHz)")
+            self._pr(f"  IL @ Nyquist ({f_nyq_ghz:.1f} GHz) = {il_at_nyq:.2f} dB")
+        elif model == "sqrt":
             ratio = np.sqrt(np.clip(f01 / f_baud_nyq, 0, None))
-        else:
+            il_db = il * ratio
+            il_db[0] = 0.0
+            self._pr(f"  Model: IL(f) = {il:.1f} * sqrt(f/f_nyq)  dB")
+        else:  # linear
             ratio = f01 / f_baud_nyq
-        il_db = il * ratio
-        il_db[0] = 0.0
+            il_db = il * ratio
+            il_db[0] = 0.0
+            self._pr(f"  Model: IL(f) = {il:.1f} * f/f_nyq  dB")
+
         il_db = np.clip(il_db, -80, 0)
         H_mag = 10.0 ** (il_db / 20.0)
 
@@ -344,11 +386,9 @@ class App(tk.Tk):
         self.meas_os = np.fft.irfft(X * H, N)
 
         # Store exact channel response for later comparison
-        self.ch_freq_ghz = f01 * spui * baud   # freq in GHz
-        self.ch_il_db    = il_db                # IL in dB (negative)
+        self.ch_freq_ghz = f_ghz
+        self.ch_il_db    = il_db
 
-        self._pr(f"  IL @ Nyquist ({baud/2:.1f} GHz): {il:.1f} dB")
-        self._pr(f"  Loss model: {model}")
         self._pr(f"  Applied in frequency domain (exact)")
 
         # Optional noise / jitter
@@ -1090,6 +1130,105 @@ class App(tk.Tk):
         fig.text(0.5,0.5,"Run analysis first",
                  ha="center",va="center",fontsize=14,color="gray")
         self.cvs[name].draw()
+
+    # =================================================================
+    #  SWEEP
+    # =================================================================
+    def _run_sweep(self):
+        param = self.v_sw_param.get()
+        start = self.v_sw_start.get()
+        stop  = self.v_sw_stop.get()
+        steps = self.v_sw_steps.get()
+        vals  = np.linspace(start, stop, steps)
+
+        self._pr("=" * 58)
+        self._pr(f"  SWEEP: {param}  [{start} .. {stop}]  {steps} steps")
+        self._pr("=" * 58)
+
+        results = {"param": param, "values": vals,
+                   "sndr": [], "r2": [], "rms_err": [], "cursor": []}
+
+        for i, v in enumerate(vals):
+            # Set the swept parameter
+            if param == "IL @ Nyq":
+                self.v_il.set(v)
+            elif param == "Noise SNR":
+                self.v_ch_snr.set(v)
+            elif param == "Num taps":
+                self.v_ntaps.set(int(v))
+            elif param == "PRBS order":
+                self.v_prbs.set(int(v))
+
+            try:
+                self._step1_gen_ideal()
+                self._step2_channel()
+                self._step3_cdr_align()
+                self._step4_linear_fit()
+                self._step5_fitted()
+
+                info = self.ext_info
+                vs = info["valid_slice"]
+                y = info["y_signal"]
+                resid = info["residual"]
+                p_s = np.mean(y**2); p_e = np.mean(resid**2)
+                sndr = 10*np.log10(p_s/p_e) if p_e > 1e-30 else np.inf
+
+                results["sndr"].append(sndr)
+                results["r2"].append(info["r_squared"])
+                results["rms_err"].append(np.sqrt(p_e))
+                results["cursor"].append(self.pulse_est[info["cursor_pos"]])
+
+                self._pr(f"  [{i+1}/{steps}] {param}={v:.2f}  "
+                         f"SNDR={sndr:.2f}  R2={info['r_squared']:.6f}  "
+                         f"cursor={self.pulse_est[info['cursor_pos']]:.4f}")
+            except Exception as e:
+                self._pr(f"  [{i+1}/{steps}] {param}={v:.2f}  ERROR: {e}")
+                results["sndr"].append(np.nan)
+                results["r2"].append(np.nan)
+                results["rms_err"].append(np.nan)
+                results["cursor"].append(np.nan)
+
+        # Convert to arrays
+        for k in ["sndr", "r2", "rms_err", "cursor"]:
+            results[k] = np.array(results[k])
+
+        self._draw_sweep(results)
+        self.nb.select(len(self.figs) - 1)  # switch to Sweep tab
+        self._pr("  Sweep complete.")
+
+    def _draw_sweep(self, results):
+        fig = self.figs["Sweep"]; fig.clear()
+        vals = results["values"]
+        param = results["param"]
+
+        ax1 = fig.add_subplot(2, 2, 1)
+        ax1.plot(vals, results["sndr"], "bo-", lw=1.5, ms=5)
+        ax1.set_xlabel(param); ax1.set_ylabel("SNDR (dB)")
+        ax1.set_title("SNDR vs " + param)
+        ax1.grid(True, alpha=0.3)
+
+        ax2 = fig.add_subplot(2, 2, 2)
+        ax2.plot(vals, results["r2"], "rs-", lw=1.5, ms=5)
+        ax2.set_xlabel(param); ax2.set_ylabel("R^2")
+        ax2.set_title("R^2 vs " + param)
+        ax2.grid(True, alpha=0.3)
+
+        ax3 = fig.add_subplot(2, 2, 3)
+        ax3.plot(vals, results["rms_err"], "g^-", lw=1.5, ms=5)
+        ax3.set_xlabel(param); ax3.set_ylabel("RMS residual")
+        ax3.set_title("RMS Error vs " + param)
+        ax3.grid(True, alpha=0.3)
+
+        ax4 = fig.add_subplot(2, 2, 4)
+        ax4.plot(vals, results["cursor"], "m*-", lw=1.5, ms=8)
+        ax4.set_xlabel(param); ax4.set_ylabel("Cursor tap value")
+        ax4.set_title("Main Cursor vs " + param)
+        ax4.grid(True, alpha=0.3)
+
+        fig.suptitle(f"Sweep: {param}  [{vals[0]:.1f} .. {vals[-1]:.1f}]",
+                     fontsize=12, fontweight="bold")
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        self.cvs["Sweep"].draw()
 
     # =================================================================
     #  FILE I/O
