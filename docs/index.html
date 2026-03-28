@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PAM4 SerDes TX Linear Fit — Tutorial</title>
+<script>
+MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
 <style>
   :root{--bg:#f8f9fa;--card:#fff;--ac:#2563eb;--ac2:#059669;--warn:#d97706;
         --cbg:#1e293b;--cfg:#e2e8f0;--bdr:#e2e8f0;}
@@ -139,15 +146,15 @@
   </table>
 
   <h3>Confidence Interval</h3>
-  <div class="eq">Cov(&hcirc;) = &sigma;&sup2; &middot; (A<sup>T</sup>A)<sup>&minus;1</sup></div>
-  <p>95% CI = h[k] &plusmn; 1.96 &times; &radic;Cov[k,k]. Narrow CI = reliable tap. Wide CI = noise-dominated. For PRBS, all taps have equal CI width because A<sup>T</sup>A &asymp; constant &times; I.</p>
+  $$\operatorname{Cov}(\hat{h}) = \sigma^2 \left(A^\top A\right)^{-1}$$
+  <p>95% CI = $\hat{h}[k] \pm 1.96\sqrt{\operatorname{Cov}[k,k]}$. Narrow CI = reliable tap. Wide CI = noise-dominated. For PRBS, all taps have equal CI width because $A^\top A \approx c \cdot I$.</p>
 </section>
 
 <!-- ============================================================ -->
 <section id="tab-step">
   <h2>Tab: Step Response</h2>
   <div class="fig-section"><img src="img/step_response.png" alt="Step Response"></div>
-  <div class="eq">step[n] = &Sigma;<sub>k=0</sub><sup>n</sup> h[k] = cumsum(pulse)</div>
+  $$\mathrm{step}[n] = \sum_{k=0}^{n} h[k] = \operatorname{cumsum}\bigl(h\bigr)$$
   <table>
     <tr><th>Feature</th><th>What it tells you</th></tr>
     <tr><td>Final value</td><td>DC gain of the system. Ideal = 1.0 (lossless)</td></tr>
@@ -180,7 +187,7 @@
     <div class="box orange">Channel<br><small>H(f)</small></div><span class="arrow">&rarr; downsample &rarr;</span>
     <div class="box red">Aliasing<br><small>sidelobes fold back</small></div>
   </div>
-  <div class="eq">G(f) = &Sigma;<sub>k</sub> sinc(f + k&middot;f<sub>baud</sub>) &times; H<sub>ch</sub>(f + k&middot;f<sub>baud</sub>)</div>
+  $$G(f) = \sum_{k=-\infty}^{\infty} \operatorname{sinc}\!\left(f + k f_{\text{baud}}\right) \cdot H_{\text{ch}}\!\left(f + k f_{\text{baud}}\right)$$
 </section>
 
 <!-- ============================================================ -->
@@ -299,28 +306,69 @@
   <h2>Mathematical Reference</h2>
 
   <h3>Convolution model</h3>
-  <div class="eq">y[n] = &Sigma;<sub>k=0</sub><sup>L-1</sup> h[k] &middot; a[n&minus;k] &ensp;&rArr;&ensp; y = A &middot; h</div>
+  $$y[n] = \sum_{k=0}^{L-1} h[k] \cdot a[n-k] \quad\Longrightarrow\quad \mathbf{y} = \mathbf{A}\,\mathbf{h}$$
+
+  <p>In matrix form:</p>
+  $$\underbrace{\begin{bmatrix} y[L\!-\!1] \\ y[L] \\ \vdots \\ y[N\!-\!1] \end{bmatrix}}_{\mathbf{y}}
+  =
+  \underbrace{\begin{bmatrix}
+    a[L\!-\!1] & a[L\!-\!2] & \cdots & a[0] \\
+    a[L]       & a[L\!-\!1] & \cdots & a[1] \\
+    \vdots     & \vdots     & \ddots & \vdots \\
+    a[N\!-\!1] & a[N\!-\!2] & \cdots & a[N\!-\!L]
+  \end{bmatrix}}_{\mathbf{A}\;\text{(Toeplitz)}}
+  \underbrace{\begin{bmatrix} h[0] \\ h[1] \\ \vdots \\ h[L\!-\!1] \end{bmatrix}}_{\mathbf{h}}$$
 
   <h3>Least squares</h3>
-  <div class="eq">&hcirc; = argmin &#x2016;y &minus; Ah&#x2016;&sup2; &ensp;&rArr;&ensp; A<sup>T</sup>A&hcirc; = A<sup>T</sup>y</div>
+  $$\hat{\mathbf{h}} = \arg\min_{\mathbf{h}} \left\lVert \mathbf{y} - \mathbf{A}\mathbf{h} \right\rVert^2$$
 
-  <h3>SVD solution</h3>
-  <pre><code>A = U &middot; &Sigma; &middot; V^T
-h = V &middot; &Sigma;^{-1} &middot; U^T &middot; y</code></pre>
+  <p>Setting the gradient to zero gives the <strong>Normal Equation</strong>:</p>
+  $$\mathbf{A}^\top\!\mathbf{A}\;\hat{\mathbf{h}} = \mathbf{A}^\top\!\mathbf{y}
+  \quad\Longrightarrow\quad
+  \hat{\mathbf{h}} = \left(\mathbf{A}^\top\!\mathbf{A}\right)^{-1}\mathbf{A}^\top\!\mathbf{y}$$
+
+  <p><strong>Geometric interpretation:</strong> $\hat{\mathbf{y}} = \mathbf{A}\hat{\mathbf{h}}$ is the projection of $\mathbf{y}$ onto the column space of $\mathbf{A}$. The residual $\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}}$ is orthogonal to every column: $\mathbf{A}^\top\mathbf{e} = \mathbf{0}$.</p>
+
+  <h3>SVD solution (numerically stable)</h3>
+  $$\mathbf{A} = \mathbf{U}\,\boldsymbol{\Sigma}\,\mathbf{V}^\top
+  \quad\Longrightarrow\quad
+  \hat{\mathbf{h}} = \mathbf{V}\,\boldsymbol{\Sigma}^{-1}\,\mathbf{U}^\top\,\mathbf{y}$$
+
+  <p>where $\boldsymbol{\Sigma}^{-1} = \operatorname{diag}\!\left(\tfrac{1}{\sigma_1},\;\tfrac{1}{\sigma_2},\;\ldots,\;\tfrac{1}{\sigma_L}\right)$.</p>
+
+  <p>If $\sigma_k$ is small, $1/\sigma_k$ is large &rarr; amplifies noise &rarr; unstable. <strong>Condition number</strong> $\kappa = \sigma_{\max}/\sigma_{\min}$ quantifies this risk.</p>
 
   <h3>Confidence interval</h3>
-  <div class="eq">Cov(&hcirc;) = &sigma;&sup2;(A<sup>T</sup>A)<sup>&minus;1</sup>, &ensp; 95% CI = &hcirc;[k] &plusmn; 1.96&radic;Cov[k,k]</div>
+  $$\operatorname{Cov}(\hat{\mathbf{h}}) = \hat{\sigma}^2 \left(\mathbf{A}^\top\!\mathbf{A}\right)^{-1},
+  \qquad \hat{\sigma}^2 = \frac{\lVert\mathbf{e}\rVert^2}{N - L}$$
 
-  <h3>Why PRBS works well</h3>
-  <pre><code>PRBS autocorrelation: R[0]=5, R[k&ne;0]&asymp;0
-&rArr; A^T A &asymp; 5N &middot; I  (diagonal)
-&rArr; cond(A) &asymp; 1  (ideal conditioning)</code></pre>
+  $$\text{95\% CI for } h[k]:\quad \hat{h}[k] \;\pm\; 1.96\,\sqrt{\operatorname{Cov}[k,k]}$$
+
+  <h3>Why PRBS gives ideal conditioning</h3>
+
+  $$\left(\mathbf{A}^\top\!\mathbf{A}\right)_{ij}
+  = \sum_{n} a[n-i]\,a[n-j]
+  = N \cdot R_{aa}[i-j]$$
+
+  <p>For PAM4 PRBS with levels $\{-3,-1,+1,+3\}$:</p>
+  $$R_{aa}[\tau] = \begin{cases} 5 & \tau = 0 \\[4pt] \approx 0 & \tau \neq 0 \end{cases}
+  \quad\Longrightarrow\quad
+  \mathbf{A}^\top\!\mathbf{A} \approx 5N\,\mathbf{I}
+  \quad\Longrightarrow\quad
+  \kappa \approx 1$$
 
   <h3>SNDR</h3>
-  <div class="eq">SNDR = 10 &middot; log<sub>10</sub>( mean(y&sup2;) / mean(e&sup2;) )</div>
+  $$\mathrm{SNDR} = 10\,\log_{10}\!\left(\frac{\overline{y^2}}{\overline{e^2}}\right)
+  = 10\,\log_{10}\!\left(\frac{P_{\text{signal}}}{P_{\text{error}}}\right)$$
 
-  <h3>RLM</h3>
-  <div class="eq">RLM = 3 &times; min(&Delta;V<sub>01</sub>, &Delta;V<sub>12</sub>, &Delta;V<sub>23</sub>) / V<sub>swing</sub></div>
+  <h3>RLM (Ratio Level Mismatch)</h3>
+  $$\mathrm{RLM} = \frac{3\;\min\!\left(\Delta V_{01},\;\Delta V_{12},\;\Delta V_{23}\right)}{V_{\text{swing}}}$$
+  <p>Ideal = 1.0 (four PAM4 levels equally spaced).</p>
+
+  <h3>Tikhonov regularization</h3>
+  <p>When $\kappa$ is too large:</p>
+  $$\hat{\mathbf{h}}_{\text{reg}} = \left(\mathbf{A}^\top\!\mathbf{A} + \lambda\,\mathbf{I}\right)^{-1}\mathbf{A}^\top\!\mathbf{y}$$
+  <p>$\lambda > 0$ prevents $1/\sigma_k$ from exploding, at the cost of introducing a small bias. Not needed for PRBS ($\kappa \approx 2$).</p>
 </section>
 
 <!-- ============================================================ -->

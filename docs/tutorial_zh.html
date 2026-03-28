@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PAM4 SerDes TX Linear Fit — Tutorial</title>
+<script>
+MathJax = {
+  tex: { inlineMath: [['$','$']], displayMath: [['$$','$$']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
 <style>
   :root{--bg:#f8f9fa;--card:#fff;--ac:#2563eb;--ac2:#059669;--warn:#d97706;
         --cbg:#1e293b;--cfg:#e2e8f0;--bdr:#e2e8f0;}
@@ -551,51 +558,50 @@ PRBS autocorrelation:
 
   <h3>A. 從摺積到矩陣方程</h3>
   <p>量測信號是 symbols 和 channel pulse 的摺積：</p>
-  <div class="eq">
-    y[n] = (a * h)[n] = &Sigma;<sub>k=0</sub><sup>L-1</sup> h[k] &middot; a[n&minus;k]
-  </div>
-  <p>寫成矩陣形式：y = A &middot; h，其中 A 是 Toeplitz 矩陣。</p>
-  <p>如果有 N 個 output samples 和 L 個 taps：A 是 N&times;L，方程組是<strong>超定的</strong>（N &gt;&gt; L）。</p>
+  $$y[n] = \sum_{k=0}^{L-1} h[k] \cdot a[n-k]$$
+  <p>寫成矩陣形式 $\mathbf{y} = \mathbf{A}\mathbf{h}$，其中 A 是 Toeplitz 矩陣：</p>
+  $$\underbrace{\begin{bmatrix} y[L\!-\!1] \\ y[L] \\ \vdots \\ y[N\!-\!1] \end{bmatrix}}_{\mathbf{y}}
+  =
+  \underbrace{\begin{bmatrix}
+    a[L\!-\!1] & a[L\!-\!2] & \cdots & a[0] \\
+    a[L]       & a[L\!-\!1] & \cdots & a[1] \\
+    \vdots     & \vdots     & \ddots & \vdots \\
+    a[N\!-\!1] & a[N\!-\!2] & \cdots & a[N\!-\!L]
+  \end{bmatrix}}_{\mathbf{A}\;\text{(Toeplitz)}}
+  \underbrace{\begin{bmatrix} h[0] \\ h[1] \\ \vdots \\ h[L\!-\!1] \end{bmatrix}}_{\mathbf{h}}$$
+  <p>如果有 N 個 output samples 和 L 個 taps：A 是 N×L，方程組是<strong>超定的</strong>（N >> L）。</p>
 
   <h3>B. Least Squares 求解</h3>
-  <div class="eq">
-    ĥ = argmin<sub>h</sub> &Vert; y &minus; A·h &Vert;&sup2;
-  </div>
+  $$\hat{\mathbf{h}} = \arg\min_{\mathbf{h}} \left\lVert \mathbf{y} - \mathbf{A}\mathbf{h} \right\rVert^2$$
   <p><strong>Normal Equation：</strong></p>
-  <div class="eq">
-    A<sup>T</sup>A · ĥ = A<sup>T</sup>y &ensp;⟹&ensp; ĥ = (A<sup>T</sup>A)<sup>−1</sup> A<sup>T</sup>y
-  </div>
+  $$\mathbf{A}^\top\!\mathbf{A}\;\hat{\mathbf{h}} = \mathbf{A}^\top\!\mathbf{y}
+  \quad\Longrightarrow\quad
+  \hat{\mathbf{h}} = \left(\mathbf{A}^\top\!\mathbf{A}\right)^{-1}\mathbf{A}^\top\!\mathbf{y}$$
 
-  <p><strong>幾何意義：</strong>把 y 投影到 A 的 column space 上。殘差 e = y − Aĥ 垂直於 column space：</p>
-  <div class="eq">A<sup>T</sup> · e = 0</div>
+  <p><strong>幾何意義：</strong>把 $\mathbf{y}$ 投影到 $\mathbf{A}$ 的 column space 上。殘差 $\mathbf{e} = \mathbf{y} - \mathbf{A}\hat{\mathbf{h}}$ 垂直於 column space：</p>
+  $$\mathbf{A}^\top \mathbf{e} = \mathbf{0}$$
 
   <h3>C. SVD 解法（數值穩定）</h3>
-  <pre><code>A = U · Σ · V<sup>T</sup>
-
-ĥ = V · Σ<sup>−1</sup> · U<sup>T</sup> · y
-
-其中 Σ<sup>−1</sup> = diag(1/σ₁, 1/σ₂, ..., 1/σ_L)
-
-如果 σ_k 很小 → 1/σ_k 很大 → 放大噪音 → 解不穩定
-如果所有 σ_k 差不多大（PRBS 的情況）→ 解非常穩定</code></pre>
+  $$\mathbf{A} = \mathbf{U}\,\boldsymbol{\Sigma}\,\mathbf{V}^\top
+  \quad\Longrightarrow\quad
+  \hat{\mathbf{h}} = \mathbf{V}\,\boldsymbol{\Sigma}^{-1}\,\mathbf{U}^\top\,\mathbf{y}$$
+  <p>其中 $\boldsymbol{\Sigma}^{-1} = \operatorname{diag}\!\left(\tfrac{1}{\sigma_1},\;\tfrac{1}{\sigma_2},\;\ldots,\;\tfrac{1}{\sigma_L}\right)$</p>
+  <p>如果 $\sigma_k$ 很小 → $1/\sigma_k$ 很大 → 放大噪音 → 解不穩定。<br>
+     如果所有 $\sigma_k$ 差不多大（PRBS 的情況）→ 解非常穩定。</p>
 
   <h3>D. Regularization（正則化）</h3>
-  <p>當 cond# 過大時，加 Tikhonov regularization：</p>
-  <div class="eq">
-    ĥ = (A<sup>T</sup>A + &lambda;I)<sup>−1</sup> A<sup>T</sup>y
-  </div>
-  <p>&lambda; &gt; 0 防止 1/&sigma;<sub>k</sub> 爆掉，代價是引入少量 bias。對 PRBS 通常不需要。</p>
+  <p>當 condition number $\kappa$ 過大時，加 Tikhonov regularization：</p>
+  $$\hat{\mathbf{h}}_{\text{reg}} = \left(\mathbf{A}^\top\!\mathbf{A} + \lambda\,\mathbf{I}\right)^{-1}\mathbf{A}^\top\!\mathbf{y}$$
+  <p>$\lambda > 0$ 防止 $1/\sigma_k$ 爆掉，代價是引入少量 bias。對 PRBS 通常不需要（$\kappa \approx 2$）。</p>
 
   <h3>E. PRBS 為什麼適合做 Linear Fit</h3>
-  <pre><code>PRBS 的自相關：R[τ] = E[a[n]·a[n+τ]]
-
-PAM4 ({-3,-1,+1,+3}) 的統計：
-  E[a]  = 0        （均值為零）
-  E[a²] = (9+1+1+9)/4 = 5.0  （功率 = 5）
-  R[0]  = 5.0
-  R[τ≠0] ≈ 0      （偽隨機序列近似白噪音）
-
-→ A<sup>T</sup>A ≈ 5N · I  （5N 倍的單位矩陣）
+  $$\left(\mathbf{A}^\top\!\mathbf{A}\right)_{ij} = \sum_n a[n-i]\,a[n-j] = N \cdot R_{aa}[i-j]$$
+  <p>PAM4 $\{-3,-1,+1,+3\}$ 的統計：</p>
+  $$R_{aa}[\tau] = \begin{cases} 5 & \tau = 0 \\[4pt] \approx 0 & \tau \neq 0 \end{cases}
+  \quad\Longrightarrow\quad
+  \mathbf{A}^\top\!\mathbf{A} \approx 5N\,\mathbf{I}
+  \quad\Longrightarrow\quad
+  \kappa \approx 1$$
 → (A<sup>T</sup>A)<sup>−1</sup> ≈ (1/5N) · I
 → ĥ ≈ (1/5N) · A<sup>T</sup>y  （類似 matched filter）
 → Condition number ≈ 1  （理想情況）</code></pre>
