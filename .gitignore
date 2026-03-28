@@ -3,6 +3,11 @@ __pycache__/
 *.pyo
 .claude/
 
-# Generated plots (can be regenerated)
-*.png
-!tutorial_img/*.png
+# Generated plots in root (can be regenerated)
+/out_*.png
+/plot_*.png
+/eye_test.png
+/explain_ac.png
+/pam4_dashboard.png
+/fir_comparison.png
+/eye_diagram.png

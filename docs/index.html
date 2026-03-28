@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAM4 SerDes TX Linear Fit — Tutorial</title>
+<style>
+  :root{--bg:#f8f9fa;--card:#fff;--ac:#2563eb;--ac2:#059669;--warn:#d97706;
+        --cbg:#1e293b;--cfg:#e2e8f0;--bdr:#e2e8f0;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:#1e293b;line-height:1.75;}
+  .container{max-width:1060px;margin:0 auto;padding:20px;}
+  nav{background:var(--cbg);color:#fff;padding:10px 0;position:sticky;top:0;z-index:99;}
+  nav .container{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+  nav a{color:#93c5fd;text-decoration:none;font-size:.85em;}nav a:hover{color:#fff;}
+  nav .title{font-size:1.15em;font-weight:700;color:#fff;margin-right:auto;}
+  nav .lang{margin-left:auto;font-size:.85em;}
+  section{background:var(--card);border:1px solid var(--bdr);border-radius:12px;padding:30px 32px;margin:22px 0;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  h1{font-size:1.9em;margin-bottom:6px;color:var(--ac);}
+  h2{font-size:1.45em;margin:22px 0 10px;color:var(--ac);border-bottom:2px solid var(--ac);padding-bottom:4px;}
+  h3{font-size:1.1em;margin:16px 0 6px;color:#334155;}
+  p,li{margin-bottom:7px;}ul,ol{padding-left:22px;}
+  pre{background:var(--cbg);color:var(--cfg);padding:14px 18px;border-radius:8px;overflow-x:auto;font-size:.86em;line-height:1.5;margin:10px 0;font-family:Consolas,'Courier New',monospace;}
+  code{font-family:Consolas,'Courier New',monospace;background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.9em;}
+  pre code{background:none;padding:0;}
+  table{border-collapse:collapse;width:100%;margin:10px 0;}
+  th,td{border:1px solid var(--bdr);padding:7px 10px;text-align:center;}
+  th{background:#f1f5f9;font-weight:600;}tr:nth-child(even){background:#f8fafc;}
+  .note{background:#eff6ff;border-left:4px solid var(--ac);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .warn{background:#fffbeb;border-left:4px solid var(--warn);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .key{background:#f0fdf4;border-left:4px solid var(--ac2);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;}
+  .eq{background:#f8fafc;border:1px solid var(--bdr);padding:14px 20px;border-radius:8px;margin:12px 0;text-align:center;font-size:1.08em;font-family:'Cambria Math','Times New Roman',serif;}
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0;justify-content:center;}
+  .flow .box{background:var(--ac);color:#fff;padding:7px 14px;border-radius:8px;font-weight:600;font-size:.88em;text-align:center;min-width:90px;}
+  .flow .box.green{background:var(--ac2);}.flow .box.orange{background:var(--warn);}.flow .box.red{background:#dc2626;}
+  .flow .arrow{font-size:1.3em;color:#94a3b8;}
+  .tag{display:inline-block;padding:1px 9px;border-radius:12px;font-size:.78em;font-weight:600;}
+  .tag.blue{background:#dbeafe;color:#1e40af;}.tag.green{background:#dcfce7;color:#166534;}.tag.red{background:#fee2e2;color:#991b1b;}
+  .matrix{display:inline-block;border-left:2px solid #334155;border-right:2px solid #334155;padding:3px 8px;margin:4px;vertical-align:middle;}
+  .matrix td{border:none;padding:2px 7px;font-family:Consolas,monospace;font-size:.82em;}
+  .fig-section{margin:18px 0;}
+  .fig-section img{width:100%;border:1px solid #ddd;border-radius:8px;margin:8px 0;cursor:zoom-in;}
+  .fig-section img:hover{box-shadow:0 2px 12px rgba(0,0,0,.15);}
+  footer{text-align:center;padding:28px;color:#94a3b8;font-size:.83em;}
+  @media(max-width:750px){.container{padding:10px;}section{padding:16px;}}
+</style>
+</head>
+<body>
+
+<nav><div class="container">
+  <span class="title">PAM4 SerDes Linear Fit</span>
+  <a href="#overview">Overview</a>
+  <a href="#tab-waveform">Waveform</a>
+  <a href="#tab-eye">Eye</a>
+  <a href="#tab-pulse">Pulse</a>
+  <a href="#tab-step">Step</a>
+  <a href="#tab-ac">AC</a>
+  <a href="#tab-linfit">Linear Fit</a>
+  <a href="#tab-hist">Histogram</a>
+  <a href="#faq">FAQ</a>
+  <a href="#math">Math</a>
+  <span class="lang"><a href="tutorial_zh.html">中文</a> | <strong>EN</strong></span>
+</div></nav>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<section id="overview">
+  <h1>PAM4 Channel Pulse Response Extraction</h1>
+  <div class="key">
+    <strong>Known:</strong> ideal PRBS pattern <code>a[n]</code> (no ISI) + measured waveform <code>y[n]</code> (with ISI)<br>
+    <strong>Find:</strong> channel pulse response <code>h[k]</code><br>
+    <strong>Verify:</strong> <code>conv(a, h) &asymp; y</code>, and FFT(h) &asymp; channel frequency response
+  </div>
+
+  <h3>Pipeline</h3>
+  <div class="flow">
+    <div class="box">Ideal PRBS<br><small>a[n], no ISI</small></div><span class="arrow">&rarr;</span>
+    <div class="box orange">Loss Channel<br><small>H(f)</small></div><span class="arrow">&rarr;</span>
+    <div class="box red">Measured<br><small>y[n], has ISI</small></div><span class="arrow">&rarr;</span>
+    <div class="box green">Linear Fit<br><small>y = A&middot;h</small></div><span class="arrow">&rarr;</span>
+    <div class="box">Pulse h[k]</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-waveform">
+  <h2>Tab: Waveform &mdash; Three-Signal Comparison</h2>
+  <div class="fig-section"><img src="img/waveform.png" alt="Waveform"></div>
+  <h3>Upper plot: three lines</h3>
+  <table>
+    <tr><th>Color</th><th>Name</th><th>Source</th><th>What to look for</th></tr>
+    <tr><td><span class="tag blue">Blue</span></td><td>Ideal PRBS</td><td>Known input pattern a[n]</td><td>Sharp levels at {-3,-1,+1,+3}, no ISI</td></tr>
+    <tr><td><span class="tag red">Red</span></td><td>Measured</td><td>After loss channel</td><td>Levels compressed, transitions slow, ISI visible</td></tr>
+    <tr><td><span class="tag green">Green dashed</span></td><td>Fitted = conv(a, h)</td><td>Symbols convolved with extracted pulse</td><td><strong>Should overlap red line</strong> if fit is correct</td></tr>
+  </table>
+  <h3>Lower plot: Error = Measured &minus; Fitted</h3>
+  <p>Should look like <strong>white noise</strong> (random, no structure). RMS shown in title. If periodic patterns appear, increase tap count.</p>
+
+  <h3>Oversampled View</h3>
+  <div class="fig-section"><img src="img/waveform_os.png" alt="Waveform OS"></div>
+  <p>The <strong>Waveform (OS)</strong> tab shows the same signals at 64 samples/UI, revealing the full analog-like transition shapes. Upper = ideal ZOH square wave, lower = channel-distorted waveform with slower edges.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-eye">
+  <h2>Tab: Eye Diagram</h2>
+  <div class="fig-section"><img src="img/eye_diagram.png" alt="Eye Diagram"></div>
+  <table>
+    <tr><th>Feature</th><th>Good eye</th><th>Bad eye</th></tr>
+    <tr><td>Vertical opening</td><td>3 clear diamond openings</td><td>Small or closed</td></tr>
+    <tr><td>Horizontal width</td><td>Wide, most of UI</td><td>Narrow, only at center</td></tr>
+    <tr><td>Level separation</td><td>4 horizontal bands clearly separated</td><td>Blurred, overlapping</td></tr>
+    <tr><td>Crossing spread</td><td>Tight (low jitter)</td><td>Wide (high jitter)</td></tr>
+  </table>
+  <div class="note">
+    <strong>PAM4 has 3 eyes</strong> (between levels -3/-1, -1/+1, +1/+3). Higher channel loss &rarr; eyes close. The diagram uses CDR phase alignment, cubic interpolation to 128 pts/UI, and 2D density heatmap rendering.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-pulse">
+  <h2>Tab: Pulse Response</h2>
+  <div class="fig-section"><img src="img/pulse_response.png" alt="Pulse Response"></div>
+  <h3>Upper plot: Extracted vs True</h3>
+  <table>
+    <tr><th>Color</th><th>Name</th><th>Source</th></tr>
+    <tr><td><span class="tag blue">Blue &bull;</span></td><td>Extracted</td><td>Linear fit result h[k]</td></tr>
+    <tr><td><span class="tag green">Green &FilledSmallSquare;</span></td><td>True (impulse test)</td><td>Ground truth: single impulse through same channel</td></tr>
+  </table>
+  <p><strong>They should overlap.</strong> The light blue shading is the <strong>95% confidence interval</strong>.</p>
+
+  <h3>Tap meanings</h3>
+  <table>
+    <tr><th>Tap</th><th>Name</th><th>Meaning</th><th>Ideal</th></tr>
+    <tr><td>h[cursor]</td><td>Main cursor</td><td>Current symbol's contribution (largest tap)</td><td>&rarr; 1.0</td></tr>
+    <tr><td>h[cursor&minus;1,2]</td><td>Pre-cursors</td><td>Future symbols leaking into current output</td><td>&rarr; 0</td></tr>
+    <tr><td>h[cursor+1,2,...]</td><td>Post-cursors</td><td>Past symbols leaking (ISI)</td><td>&rarr; 0</td></tr>
+  </table>
+
+  <h3>Confidence Interval</h3>
+  <div class="eq">Cov(&hcirc;) = &sigma;&sup2; &middot; (A<sup>T</sup>A)<sup>&minus;1</sup></div>
+  <p>95% CI = h[k] &plusmn; 1.96 &times; &radic;Cov[k,k]. Narrow CI = reliable tap. Wide CI = noise-dominated. For PRBS, all taps have equal CI width because A<sup>T</sup>A &asymp; constant &times; I.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-step">
+  <h2>Tab: Step Response</h2>
+  <div class="fig-section"><img src="img/step_response.png" alt="Step Response"></div>
+  <div class="eq">step[n] = &Sigma;<sub>k=0</sub><sup>n</sup> h[k] = cumsum(pulse)</div>
+  <table>
+    <tr><th>Feature</th><th>What it tells you</th></tr>
+    <tr><td>Final value</td><td>DC gain of the system. Ideal = 1.0 (lossless)</td></tr>
+    <tr><td>50% point (purple star)</td><td>Number of taps to reach half of final value &rarr; group delay indicator</td></tr>
+    <tr><td>Rise slope</td><td>Steeper = higher bandwidth, faster transitions</td></tr>
+    <tr><td>Settling speed</td><td>How many taps until stable? Slow settling = severe ISI</td></tr>
+    <tr><td>Overshoot / ringing</td><td>Exceeds final value then returns = channel has peaking</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-ac">
+  <h2>Tab: AC Response</h2>
+  <div class="fig-section"><img src="img/ac_response.png" alt="AC Response"></div>
+  <h3>Three lines</h3>
+  <table>
+    <tr><th>Color</th><th>Name</th><th>What it includes</th></tr>
+    <tr><td><span class="tag blue">Blue solid</span></td><td>Extracted |G(f)|</td><td>Channel + ZOH sinc + aliasing (actual 1-sps system response)</td></tr>
+    <tr><td><span class="tag green">Green dashed</span></td><td>True pulse (impulse test)</td><td>Same as above (ground truth)</td></tr>
+    <tr><td><span class="tag red">Red dotted</span></td><td>Pure channel H(f)</td><td>Only the channel you defined (no sinc, no aliasing)</td></tr>
+  </table>
+  <div class="key">
+    <strong>Blue and green should overlap</strong> &rarr; confirms linear fit is correct.<br>
+    <strong>Red differs from blue/green</strong> &rarr; this is expected, because the 1-sps pulse includes ZOH sinc shaping and downsampling aliasing.
+  </div>
+  <h3>Why Extracted &ne; Pure Channel</h3>
+  <p>The 1-sps pulse response spectrum includes three effects:</p>
+  <div class="flow">
+    <div class="box">ZOH sinc<br><small>&minus;3.9 dB @ Nyq</small></div><span class="arrow">&times;</span>
+    <div class="box orange">Channel<br><small>H(f)</small></div><span class="arrow">&rarr; downsample &rarr;</span>
+    <div class="box red">Aliasing<br><small>sidelobes fold back</small></div>
+  </div>
+  <div class="eq">G(f) = &Sigma;<sub>k</sub> sinc(f + k&middot;f<sub>baud</sub>) &times; H<sub>ch</sub>(f + k&middot;f<sub>baud</sub>)</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-linfit">
+  <h2>Tab: Linear Fit &mdash; Six Panels Explained</h2>
+  <div class="fig-section"><img src="img/linear_fit.png" alt="Linear Fit"></div>
+
+  <h3>(1) Matrix A heatmap</h3>
+  <p>The convolution (Toeplitz) matrix. Each row is the symbol sequence shifted by one position. Red = +3, blue = &minus;3. Diagonal stripes = Toeplitz structure.</p>
+  <p><strong>Look for:</strong> Clear diagonal stripes (correct structure), random color distribution (good PRBS randomness).</p>
+
+  <h3>(2) One-row example</h3>
+  <p>A single row extracted from A as a bar chart. Each bar = <code>a[n&minus;k]</code>, the symbol value that h[k] multiplies in one equation.</p>
+
+  <h3>(3) y vs A&middot;h</h3>
+  <p>Blue = measured y[n], red dashed = model prediction A&middot;&hcirc;h + dc. <strong>The closer they overlap, the better the fit.</strong></p>
+  <p>Quantified by R&sup2;: 0.9999 = excellent, &lt;0.99 = needs investigation.</p>
+
+  <h3>(4) Residual = y &minus; A&middot;h</h3>
+  <p>Should look like white noise. Orange dashed lines = &plusmn;RMS. Periodic patterns in the residual &rarr; increase tap count. Low-frequency drift &rarr; enable DC offset fitting.</p>
+
+  <h3>(5) SVD singular values</h3>
+  <p><strong>Flat bars = well-conditioned</strong> (all directions equally well-determined). Condition number = &sigma;<sub>max</sub>/&sigma;<sub>min</sub>. PRBS typically gives cond &asymp; 2.2 (excellent).</p>
+
+  <h3>(6) Summary text</h3>
+  <p>Model formula, matrix size, condition number, one-row verification, R&sup2;, and SNDR at a glance.</p>
+
+  <div class="key">
+    <strong>The six panels tell one story:</strong>
+    (1) What equations did we build? &rarr;
+    (2) What does one equation look like? &rarr;
+    (3) Does the solution fit well? &rarr;
+    (4) What does the error look like? &rarr;
+    (5) Is the problem well-conditioned? &rarr;
+    (6) All numbers at a glance.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tab-hist">
+  <h2>Tab: Histogram</h2>
+  <div class="fig-section"><img src="img/histogram.png" alt="Histogram"></div>
+  <p>Distribution of measured 1-sps samples, color-coded by transmitted symbol level.</p>
+  <ul>
+    <li><strong>Four groups should be clearly separated</strong> (no overlap)</li>
+    <li>Width of each distribution = noise + residual ISI</li>
+    <li>Equal spacing between groups &rarr; RLM &asymp; 1.0 (good linearity)</li>
+    <li>Severe overlap &rarr; channel loss too high, BER will be high</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="faq">
+  <h2>FAQ</h2>
+
+  <h3>Q1: How many taps should I use?</h3>
+  <table>
+    <tr><th>Channel loss</th><th>Recommended taps</th></tr>
+    <tr><td>&lt; 5 dB</td><td>11 &ndash; 21</td></tr>
+    <tr><td>5 &ndash; 15 dB</td><td>21 &ndash; 41</td></tr>
+    <tr><td>&gt; 15 dB</td><td>41 &ndash; 101</td></tr>
+  </table>
+  <p>Check the residual: periodic structure = need more taps. Or check if the step response has settled.</p>
+
+  <h3>Q2: R&sup2; is low &mdash; what's wrong?</h3>
+  <ol>
+    <li>Increase tap count</li>
+    <li>Check alignment (is lag reasonable?)</li>
+    <li>Enable DC offset fitting</li>
+    <li>If still low &rarr; system may be nonlinear (this tool assumes linearity)</li>
+  </ol>
+
+  <h3>Q3: Eye diagram is completely closed</h3>
+  <p>High channel loss closes the eye. This doesn't mean the linear fit is wrong. Reduce channel IL or add equalization (CTLE/DFE) in a real system.</p>
+
+  <h3>Q4: SNDR is much lower than the noise SNR I set</h3>
+  <ul>
+    <li>Tap count too low (channel tail not captured)</li>
+    <li>Edge effects from circular convolution</li>
+    <li>Misalignment</li>
+  </ul>
+
+  <h3>Q5: Extracted IL doesn't match the channel I set</h3>
+  <p>The extracted pulse response is the 1-sps equivalent system response, which includes ZOH sinc (&minus;3.9 dB at Nyquist) and downsampling aliasing. Check the AC Response tab: blue/green overlap = correct extraction. The red line (pure channel) is expected to differ.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="channel-cmp">
+  <h2>Channel Loss Models</h2>
+  <table>
+    <tr><th>Model</th><th>Formula</th><th>Physical basis</th><th>Use case</th></tr>
+    <tr><td>Linear</td><td>IL(f) = IL<sub>nyq</sub> &times; f/f<sub>nyq</sub></td><td>Simplified</td><td>Quick simulations</td></tr>
+    <tr><td>Sqrt (skin effect)</td><td>IL(f) = IL<sub>nyq</sub> &times; &radic;(f/f<sub>nyq</sub>)</td><td>Skin effect: current concentrates at conductor surface, R &prop; &radic;f</td><td>Short/medium PCB traces</td></tr>
+    <tr><td>a&radic;f + bf</td><td>IL = a&radic;f + b&middot;f</td><td>a = skin effect, b = dielectric loss</td><td>Full PCB/cable model</td></tr>
+    <tr><td>S-parameter</td><td>From .s4p file</td><td>Measured or EM simulation</td><td>Most accurate</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ -->
+<section id="prbs-cmp">
+  <h2>PRBS Pattern Comparison</h2>
+  <table>
+    <tr><th>Pattern</th><th>Period</th><th>Suitable for</th></tr>
+    <tr><td>PRBS7</td><td>127</td><td>Short channels (&lt; 10 taps)</td></tr>
+    <tr><td>PRBS9</td><td>511</td><td>Medium channels</td></tr>
+    <tr><td>PRBS13</td><td>8191</td><td>Long channels</td></tr>
+    <tr><td>PRBS15</td><td>32767</td><td>Very long channels</td></tr>
+    <tr><td>PRBS31</td><td>2.1&times;10<sup>9</sup></td><td>BER testing</td></tr>
+  </table>
+  <p><strong>Rule of thumb:</strong> N (symbols) &ge; 10 &times; L (taps). For L=31, one PRBS9 period (511) is sufficient.</p>
+  <p><strong>PRBSQ9</strong> for PAM4: two decorrelated PRBS9 sequences form MSB/LSB, ensuring all 4 levels are exercised uniformly.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="math">
+  <h2>Mathematical Reference</h2>
+
+  <h3>Convolution model</h3>
+  <div class="eq">y[n] = &Sigma;<sub>k=0</sub><sup>L-1</sup> h[k] &middot; a[n&minus;k] &ensp;&rArr;&ensp; y = A &middot; h</div>
+
+  <h3>Least squares</h3>
+  <div class="eq">&hcirc; = argmin &#x2016;y &minus; Ah&#x2016;&sup2; &ensp;&rArr;&ensp; A<sup>T</sup>A&hcirc; = A<sup>T</sup>y</div>
+
+  <h3>SVD solution</h3>
+  <pre><code>A = U &middot; &Sigma; &middot; V^T
+h = V &middot; &Sigma;^{-1} &middot; U^T &middot; y</code></pre>
+
+  <h3>Confidence interval</h3>
+  <div class="eq">Cov(&hcirc;) = &sigma;&sup2;(A<sup>T</sup>A)<sup>&minus;1</sup>, &ensp; 95% CI = &hcirc;[k] &plusmn; 1.96&radic;Cov[k,k]</div>
+
+  <h3>Why PRBS works well</h3>
+  <pre><code>PRBS autocorrelation: R[0]=5, R[k&ne;0]&asymp;0
+&rArr; A^T A &asymp; 5N &middot; I  (diagonal)
+&rArr; cond(A) &asymp; 1  (ideal conditioning)</code></pre>
+
+  <h3>SNDR</h3>
+  <div class="eq">SNDR = 10 &middot; log<sub>10</sub>( mean(y&sup2;) / mean(e&sup2;) )</div>
+
+  <h3>RLM</h3>
+  <div class="eq">RLM = 3 &times; min(&Delta;V<sub>01</sub>, &Delta;V<sub>12</sub>, &Delta;V<sub>23</sub>) / V<sub>swing</sub></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="gui">
+  <h2>GUI Quick Start</h2>
+  <pre><code>python gui.py</code></pre>
+  <table>
+    <tr><th>Mouse action</th><th>Effect</th></tr>
+    <tr><td>Scroll wheel</td><td>Zoom in/out centered on cursor</td></tr>
+    <tr><td>Right-click drag</td><td>Rectangle zoom</td></tr>
+    <tr><td>Double right-click</td><td>Reset to original scale</td></tr>
+  </table>
+  <h3>Validation checklist</h3>
+  <table>
+    <tr><th>Item</th><th>Expected</th><th>If not met</th></tr>
+    <tr><td>R&sup2;</td><td>&ge; 0.999</td><td>Increase taps or check alignment</td></tr>
+    <tr><td>SNDR</td><td>&asymp; noise SNR</td><td>Model insufficient or nonlinear</td></tr>
+    <tr><td>Fitted vs Measured</td><td>Overlap</td><td>Not enough taps</td></tr>
+    <tr><td>Pulse: blue vs green</td><td>Overlap</td><td>Fit problem</td></tr>
+    <tr><td>Condition #</td><td>&asymp; 2</td><td>Pattern not random enough</td></tr>
+    <tr><td>Residual</td><td>White noise</td><td>Structure = increase taps</td></tr>
+  </table>
+</section>
+
+</div>
+<footer>PAM4 SerDes TX Linear Fit &mdash; <a href="https://github.com">View on GitHub</a></footer>
+</body>
+</html>
